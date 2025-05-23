@@ -1,21 +1,14 @@
 {
-  "ストリート": [
-    "A BATHING APE",
-    "Stussy",
-    "Supreme"
-  ],
-  "パンク": [
-    "Vivienne Westwood"
-  ],
-  "ロック": [
-    "Hysteric Glamour"
-  ],
-  "ゴスロリ": [
-    "ATELIER BOZ",
-    "ALICE and the PIRATES"
-  ],
-  "モード系": [
-    "Yohji Yamamoto",
-    "COMME des GARCONS"
-  ]
+  "mercari": {
+    "ストリート": ["Supreme", "Stussy", "A BATHING APE"],
+    "モード系": ["Yohji Yamamoto", "COMME des GARCONS", "ISSEY MIYAKE"],
+    "アウトドア": ["THE NORTH FACE", "Patagonia", "Arc'teryx"],
+    "スニーカー": ["NIKE Air Jordan", "NIKE Dunk", "adidas Yeezy Boost"],
+    "未分類": []
+  },
+  "rakuma": {
+    "レディース": ["SNIDEL", "FRAY I.D"],
+    "メンズカジュアル": ["BEAMS", "UNITED ARROWS"],
+    "未分類": []
+  }
 }
