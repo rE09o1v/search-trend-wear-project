@@ -2,7 +2,7 @@ altair==5.5.0
 attrs==25.3.0
 blinker==1.9.0
 cachetools==5.5.2
-certifi==2025.4.26
+certifi==2025.4.26 # certifiのバージョンは将来の日付になっていますが、通常は最新版で問題ありません
 cffi==1.17.1
 charset-normalizer==3.4.2
 click==8.2.1
@@ -22,24 +22,23 @@ packaging==24.2
 pandas==2.2.3
 pillow==11.2.1
 plotly==6.1.1
-protobuf==6.31.0
+protobuf==6.31.0 # protobufのバージョンもPython 3.13との互換性に注意が必要な場合があります
 pyarrow==20.0.0
 pycparser==2.22
 pydeck==0.9.1
 PySocks==1.7.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.0
-pytz==2025.2
+pytz==2025.2 # pytzのバージョンも将来の日付になっています
 referencing==0.36.2
 requests==2.32.3
 rpds-py==0.25.1
-selenium==4.22.0 # streamlit-seleniumが対応するバージョンに注意
+selenium>=4.10.0 # 最新に近い安定版を推奨
 streamlit==1.45.1
-streamlit-selenium # これを追加
 tenacity==9.1.2
 toml==0.10.2
 tornado==6.5.1
 typing_extensions==4.13.2
-tzdata==2025.2
-urllib3==2.4.0
+tzdata==2025.2 # tzdataのバージョンも将来の日付になっています
+urllib3==2.4.0 # requestsとバージョンを合わせるか、より新しいものを指定
 watchdog==6.0.0

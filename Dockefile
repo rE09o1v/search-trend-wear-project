@@ -1,0 +1,81 @@
+# Streamlit Cloudが使用するベースイメージやPythonのバージョンに合わせて調整
+# Python 3.11を例としていますが、アプリの他の依存関係も考慮してください
+FROM python:3.11-slim
+
+# システムパッケージの更新と、wget、unzipのインストール
+RUN apt-get update && apt-get install -y \
+    wget \
+    unzip \
+    gnupg \
+    # Chromeの依存関係で必要になる可能性のあるライブラリ
+    libglib2.0-0 \
+    libnss3 \
+    libgconf-2-4 \
+    libfontconfig1 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb-dri3-0 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    lsb-release \
+    xdg-utils \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Google Chrome (stable) をインストール
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# ChromeDriver をインストール
+# Chromeのバージョンに合わせてChromeDriverのバージョンを決定
+# (以下のバージョンは執筆時点の例です。適宜最新を確認・調整してください)
+ARG CHROME_VERSION_FULL=$(google-chrome --version | awk '{print $3}')
+ARG CHROME_MAJOR_VERSION=$(echo $CHROME_VERSION_FULL | cut -d. -f1)
+# ChromeDriverのバージョン取得URLが変更されることがあるため注意
+# 最新のLATEST_RELEASE_XXXのURLを確認してください
+# 例: https://googlechromelabs.github.io/chrome-for-testing/
+# 以下は古い形式の例です。新しい形式のURL (JSON endpoints) を使用することを推奨します。
+# ARG CHROMEDRIVER_VERSION=$(wget -qO- https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_MAJOR_VERSION})
+# 最新のChrome for Testing JSONエンドポイントから取得する方が確実です。
+# 例: curl -s https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json
+# ここでは特定のバージョンを直接指定する例も示します (例: 114.0.5735.90)
+# 実際のChromeバージョンに合わせて調整してください。
+# google-chrome-stableのバージョンを確認し、対応するものを以下URLから探す:
+# https://googlechromelabs.github.io/chrome-for-testing/
+# 例: Chrome 125.0.6422.112 の場合、対応するChromeDriverを探す
+# 最新のバージョンを固定で指定する方が安定する場合があります。
+# 例: ChromeDriver 125.0.6422.78 (2025/05/26時点の例)
+ARG CHROMEDRIVER_VERSION="125.0.6422.78" # ここはデプロイ時のChromeバージョンに合わせて調整
+RUN wget -q --continue -P /usr/local/bin/ "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
+    && unzip -q /usr/local/bin/chromedriver-linux64.zip -d /usr/local/bin/ \
+    && mv /usr/local/bin/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
+    && chmod +x /usr/local/bin/chromedriver \
+    && rm -rf /usr/local/bin/chromedriver-linux64.zip /usr/local/bin/chromedriver-linux64
+
+# Streamlit Cloudは通常、requirements.txtを自動で処理し、アプリコードをコピーします。
+# そのため、Dockerfile内でこれらの手順を繰り返す必要は通常ありません。
+# COPY requirements.txt ./
+# RUN pip install --no-cache-dir -r requirements.txt
+# COPY . .
+# CMD ["streamlit", "run", "app.py"] # Streamlit Cloudがこれをオーバーライドします
+
+# 必要なポートを開放 (Streamlitのデフォルトは8501)
+EXPOSE 8501
+
+# アプリケーションのディレクトリを作成
+WORKDIR /app
+
+# Streamlit Cloudが残りのビルドステップ（requirements.txtのインストール、アプリのコピー）を実行します。
+# 起動コマンドもStreamlit Cloudが設定します。
