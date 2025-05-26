@@ -1,0 +1,82 @@
+# Use a specific Python version known to be stable with dependencies.
+# Streamlit Cloud might override this if runtime.txt is also present or based on its platform defaults.
+# However, system package installations below will still use this base.
+FROM python:3.11-slim
+
+# Set environment variables to non-interactive to prevent prompts during apt-get
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Tokyo
+
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
+    gnupg \
+    wget \
+    unzip \
+    curl \
+    # Dependencies for Chrome and ChromeDriver
+    libglib2.0-0 \
+    libnss3 \
+    libgconf-2-4 \
+    libfontconfig1 \
+    libfreetype6 \
+    libjpeg-dev \
+    libpng-dev \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb-dri3-0 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    ca-certificates \
+    fonts-liberation \
+    lsb-release \
+    xdg-utils \
+    # Clean up apt cache
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Google Chrome Stable
+RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get update -y \
+    # dpkg might fail on dependencies, apt-get -f install will fix them
+    && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -f install -y --no-install-recommends \
+    && rm google-chrome-stable_current_amd64.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ChromeDriver
+# Determine the version of Google Chrome installed
+RUN CHROME_VERSION=$(google-chrome --version | cut -d ' ' -f3 | cut -d '.' -f1) && echo "Detected Chrome major version: $CHROME_VERSION"
+# Get the latest ChromeDriver version for the installed Chrome major version
+# Using the new JSON endpoints for Chrome for Testing (CfT)
+RUN LATEST_CHROMEDRIVER_VERSION=$(curl -sS https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_VERSION}) \
+    && echo "Attempting to download ChromeDriver version: $LATEST_CHROMEDRIVER_VERSION" \
+    && if [ -z "$LATEST_CHROMEDRIVER_VERSION" ]; then echo "Failed to determine ChromeDriver version. Exiting."; exit 1; fi \
+    && wget -q --continue -P /usr/local/bin/ "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${LATEST_CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
+    && unzip -q /usr/local/bin/chromedriver-linux64.zip -d /usr/local/bin/ \
+    && mv /usr/local/bin/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
+    && chmod +x /usr/local/bin/chromedriver \
+    && rm -rf /usr/local/bin/chromedriver-linux64.zip /usr/local/bin/chromedriver-linux64 \
+    && echo "ChromeDriver installed successfully."
+
+# Verify ChromeDriver installation
+RUN chromedriver --version
+
+# Set up a working directory
+WORKDIR /app
+
+# Copy requirements.txt first to leverage Docker cache
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application code
+COPY . .
+
+# Streamlit Cloud will override CMD, but it's good practice to have one for local testing.
+# EXPOSE 8501 # Streamlit Cloud handles port exposure.
+# CMD ["streamlit", "run", "app.py"]

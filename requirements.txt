@@ -1,0 +1,44 @@
+altair==5.5.0
+attrs==25.3.0
+blinker==1.9.0
+cachetools==5.5.2
+certifi>=2024.2.2 # 最新版を推奨
+cffi==1.17.1
+charset-normalizer>=3.0.0
+click>=8.0.0
+colorama>=0.4.6 # Windows以外では通常不要ですが、依存関係として残る場合あり
+gitdb>=4.0.0
+GitPython>=3.0.0
+h11>=0.14.0
+idna>=3.0.0
+Jinja2>=3.0.0
+jsonschema>=4.0.0
+jsonschema-specifications>=2023.0.0
+MarkupSafe>=2.0.0
+narwhals>=0.8.0 # pandasのバージョンと互換性のあるものを確認
+numpy>=1.23.0 # pandasのバージョンと互換性のあるものを確認
+outcome>=1.0.0
+packaging>=23.0
+pandas>=2.0.0 # 最新に近い安定版を推奨
+pillow>=10.0.0
+plotly>=5.10.0
+protobuf>=4.21.0 # Python 3.11+ との互換性を考慮
+pyarrow>=14.0.0 # pandasとの互換性
+pycparser>=2.20
+pydeck>=0.8.0
+PySocks>=1.7.0 # requestsの依存関係
+python-dateutil>=2.8.0
+python-dotenv>=1.0.0
+pytz>=2023.0 # 最新版を推奨
+referencing>=0.30.0
+requests>=2.30.0
+rpds-py>=0.10.0
+selenium>=4.18.0 # 最新に近い安定版を推奨
+streamlit>=1.30.0 # 最新版を推奨
+tenacity>=8.0.0
+toml>=0.10.0
+tornado>=6.3.0 # Streamlitの依存関係
+typing_extensions>=4.7.0
+tzdata>=2023.0 # 最新版を推奨
+urllib3>=2.0.0 # requestsとバージョンを合わせる
+watchdog>=3.0.0
