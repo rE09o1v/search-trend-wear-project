@@ -19,11 +19,10 @@ except ImportError as e:
     st.error(f"scraper.pyのインポートに失敗しました: {e}")
     st.stop()
 
-APP_TITLE = "価格動向トラッカー (ブランド名検索)"
+APP_TITLE = "価格動向トラッカー (マルチサイト対応)"
 BRAND_FILE = Path(__file__).resolve().parent / "brands.json"
 DEFAULT_MOVING_AVERAGE_SHORT = 5
 DEFAULT_MOVING_AVERAGE_LONG = 20
-# CSVの期待列から 'keyword' の意味合いが変わる (ブランド名のみになる)
 EXPECTED_COLUMNS_BASE = [
     "date",
     "site",
@@ -54,9 +53,9 @@ def load_brands_cached():
         st.warning(f"{BRAND_FILE} が見つかりません。サンプルを作成します。")
         default_brands_data = {
             "mercari": {
-                "ストリート": ["Supreme", "Stussy", "A BATHING APE"],
-                "モード系": ["Yohji Yamamoto", "COMME des GARCONS", "ISSEY MIYAKE"],
-                "未分類": [],  # カテゴリなしでブランドだけ追加する場合の受け皿
+                "ストリート": ["Supreme", "Stussy"],
+                "モード系": ["Yohji Yamamoto", "COMME des GARCONS"],
+                "未分類": [],
             },
             "rakuma": {"レディースアパレル": ["SNIDEL", "FRAY I.D"], "未分類": []},
         }
@@ -70,7 +69,11 @@ def load_brands_cached():
             return {"mercari": {"未分類": []}}
     try:
         with open(BRAND_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            content = f.read()
+            if not content:
+                st.warning(f"{BRAND_FILE} は空です。サンプルデータで初期化します。")
+                return {}
+            return json.loads(content)
     except json.JSONDecodeError as e:
         st.error(f"{BRAND_FILE} のJSON形式が正しくありません: {e}")
         return {"mercari": {"未分類": []}}
@@ -91,12 +94,10 @@ def save_brands_to_json(brands_data):
 
 
 @st.cache_data(ttl=600)
-def load_price_data_cached(site_name, brand_keyword):  # 引数名を brand_keyword に変更
+def load_price_data_cached(site_name, brand_keyword):
     safe_brand_keyword = re.sub(r'[\\/*?:"<>|]', "_", brand_keyword)
     safe_site_name = re.sub(r'[\\/*?:"<>|]', "_", site_name)
-    file_name = (
-        f"{safe_site_name}_{safe_brand_keyword}.csv"  # ファイル名はサイト名_ブランド名
-    )
+    file_name = f"{safe_site_name}_{safe_brand_keyword}.csv"
     file_path = DATA_DIR / file_name
 
     if file_path.exists():
@@ -111,10 +112,7 @@ def load_price_data_cached(site_name, brand_keyword):  # 引数名を brand_keyw
                 return pd.DataFrame()
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values(by="date")
-            # 読み込んだDFのkeyword列が、期待するbrand_keywordと一致するか確認（オプション）
-            # if not df[df['keyword'] == brand_keyword].empty:
-            #     return df[df['keyword'] == brand_keyword] # 念のためフィルタリング
-            return df  # CSV内にはそのブランドのデータしかないはず
+            return df
         except Exception:
             return pd.DataFrame()
     return pd.DataFrame()
@@ -133,20 +131,15 @@ def create_multi_brand_price_trend_chart(
     fig = make_subplots(specs=[[{"secondary_y": False}]])
     color_idx = 0
 
-    for (
-        target_display_key,
-        df_data,
-    ) in dataframes_dict.items():  # target_display_key は "サイト: ブランド名"
-        # df_data は {'df': DataFrame, 'site': str, 'brand_keyword': str} の形式
+    for target_display_key, df_data in dataframes_dict.items():
         df = df_data["df"]
         site_name = df_data["site"]
-        brand_name = df_data["brand_keyword"]  # ここはブランド名のみ
+        brand_name = df_data["brand_keyword"]
 
         if df.empty or "average_price" not in df.columns:
             continue
 
         current_color = PLOTLY_COLORS[color_idx % len(PLOTLY_COLORS)]
-        # 凡例の表示名: サイト名は含めるが、カテゴリ名は含めない
         legend_name_prefix = f"{site_name}: {brand_name}"
 
         fig.add_trace(
@@ -243,17 +236,27 @@ st.title(APP_TITLE)
 if "selected_targets_for_chart" not in st.session_state:
     st.session_state.selected_targets_for_chart = []
 if "last_active_target_for_update" not in st.session_state:
-    st.session_state.last_active_target_for_update = (
-        None  # {'site': str, 'brand_keyword': str, 'category_for_json': str}
-    )
+    st.session_state.last_active_target_for_update = None
 
 with st.sidebar:
     st.header("設定")
     brands_data_all_sites = load_brands_cached()
 
     if not brands_data_all_sites:
-        st.error("ブランド情報が読み込めませんでした。")
-        st.stop()
+        st.error(
+            "ブランド情報が読み込めませんでした。brands.jsonが空か、または存在しない可能性があります。"
+        )
+        if BRAND_FILE.exists() and BRAND_FILE.read_text() == "":
+            load_brands_cached.clear()
+            brands_data_all_sites = load_brands_cached()
+            if not brands_data_all_sites:
+                st.stop()
+        elif not BRAND_FILE.exists():
+            brands_data_all_sites = load_brands_cached()
+            if not brands_data_all_sites:
+                st.stop()
+        else:
+            st.stop()
 
     available_sites = list(brands_data_all_sites.keys())
     if not available_sites:
@@ -261,50 +264,56 @@ with st.sidebar:
         st.stop()
 
     selected_site_for_display = st.selectbox(
-        "表示/操作するサイトを選択", available_sites, key="sb_site_display"
+        "表示/操作するサイトを選択", available_sites, key="sb_site_display_v3"
     )
 
     st.subheader(f"「{selected_site_for_display}」の表示ブランド選択")
 
     current_brands_on_site = brands_data_all_sites.get(selected_site_for_display, {})
-    temp_selected_targets = list(st.session_state.selected_targets_for_chart)
+    # This list will be rebuilt in each run based on current checkbox states
+    current_run_selected_targets = []
 
     for category, brands_in_cat in current_brands_on_site.items():
         with st.expander(f"{category} ({len(brands_in_cat)})", expanded=False):
-            for brand_name_from_json in brands_in_cat:  # これはブランド名のみ
-                # 内部的な管理キー (セッションステートやデータロード用)
-                # brand_keyword はブランド名のみ
+            for brand_name_from_json in brands_in_cat:
                 target_obj = {
                     "site": selected_site_for_display,
-                    "brand_keyword": brand_name_from_json,  # 検索・保存用ブランド名
-                    "display_name": f"{selected_site_for_display}: {brand_name_from_json}",  # チャート凡例等
-                    "category_for_json": category,  # brands.json 操作用
+                    "brand_keyword": brand_name_from_json,
+                    "display_name": f"{selected_site_for_display}: {brand_name_from_json}",
+                    "category_for_json": category,
                 }
-
                 checkbox_key = f"cb_target_{target_obj['display_name'].replace(' ', '_').replace('::','__').replace(':','_')}"
 
-                if checkbox_key not in st.session_state:
-                    st.session_state[checkbox_key] = False
+                # Determine the initial value for the checkbox if its state is not yet set.
+                # This should come from the persisted st.session_state.selected_targets_for_chart
+                initial_checked_state = any(
+                    t["display_name"] == target_obj["display_name"]
+                    for t in st.session_state.selected_targets_for_chart
+                )
 
-                is_checked = st.checkbox(
-                    f"{brand_name_from_json}", key=checkbox_key
-                )  # 表示はブランド名のみ
+                # The 'value' param is only used if checkbox_key is not in st.session_state.
+                # Otherwise, st.session_state[checkbox_key] (the widget's own state) is used.
+                is_checked_now = st.checkbox(
+                    f"{brand_name_from_json}",
+                    value=initial_checked_state,  # Used for first render if key not in session_state
+                    key=checkbox_key,
+                )
+                # At this point, st.session_state[checkbox_key] is correctly set by Streamlit.
 
-                if is_checked:
-                    if not any(
-                        t["display_name"] == target_obj["display_name"]
-                        for t in temp_selected_targets
-                    ):
-                        temp_selected_targets.append(target_obj)
+                if is_checked_now:
+                    current_run_selected_targets.append(target_obj)
                     st.session_state.last_active_target_for_update = target_obj
-                else:
-                    temp_selected_targets = [
-                        t
-                        for t in temp_selected_targets
-                        if t["display_name"] != target_obj["display_name"]
-                    ]
 
-    st.session_state.selected_targets_for_chart = temp_selected_targets
+    # After iterating through all checkboxes, compare the newly built list
+    # with the persisted list in session_state. If they differ, update and rerun.
+    current_sel_display_names = {
+        t["display_name"] for t in st.session_state.selected_targets_for_chart
+    }
+    new_sel_display_names = {t["display_name"] for t in current_run_selected_targets}
+
+    if current_sel_display_names != new_sel_display_names:
+        st.session_state.selected_targets_for_chart = current_run_selected_targets
+        st.rerun()
 
     if st.session_state.selected_targets_for_chart:
         st.markdown(
@@ -318,42 +327,101 @@ with st.sidebar:
         st.markdown("チャートに表示するブランドを選択してください。")
 
     st.markdown("---")
-    if st.session_state.last_active_target_for_update:
-        active_target = st.session_state.last_active_target_for_update
-        btn_label = f"「{active_target['display_name']}」のデータを取得・更新"
-        if st.button(btn_label, type="primary", key=f"btn_update_active_target"):
+    if st.session_state.selected_targets_for_chart:
+        if st.button("選択した全ブランドのデータを取得・更新", key="btn_bulk_update"):
+            targets_to_scrape = list(st.session_state.selected_targets_for_chart)
+            total_targets = len(targets_to_scrape)
+            success_count = 0
+            failure_count = 0
+
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
             with st.spinner(
-                f"「{active_target['display_name']}」の価格情報をスクレイピング中..."
+                f"選択した {total_targets} 件のブランドデータを一括取得中..."
+            ):
+                for i, target in enumerate(targets_to_scrape):
+                    status_text.info(
+                        f"処理中 ({i+1}/{total_targets}): 「{target['display_name']}」..."
+                    )
+                    try:
+                        prices = scrape_prices_for_keyword_and_site(
+                            target["site"],
+                            target["brand_keyword"],
+                            max_items_override=SITE_CONFIGS.get(target["site"], {}).get(
+                                "max_items_to_scrape", 30
+                            ),
+                        )
+                        if prices:
+                            save_daily_stats_for_site(
+                                target["site"], target["brand_keyword"], prices
+                            )
+                            st.write(
+                                f"✅ 「{target['display_name']}」のデータを更新しました。"
+                            )
+                            success_count += 1
+                        else:
+                            st.write(
+                                f"⚠️ 「{target['display_name']}」の価格情報が見つかりませんでした。"
+                            )
+                            failure_count += 1
+                    except Exception as e:
+                        st.write(
+                            f"❌ 「{target['display_name']}」の処理中にエラー: {e}"
+                        )
+                        failure_count += 1
+                    progress_bar.progress((i + 1) / total_targets)
+                    time.sleep(0.1)
+
+            status_text.empty()
+            progress_bar.empty()
+            st.success(
+                f"一括処理完了: {success_count}件成功, {failure_count}件失敗/情報なし。"
+            )
+            load_price_data_cached.clear()
+            st.rerun()
+    else:
+        st.info("一括更新を行うには、まず表示ブランドを選択してください。")
+
+    st.markdown("---")
+    if st.session_state.last_active_target_for_update:
+        active_target_single = st.session_state.last_active_target_for_update
+        btn_label_single = (
+            f"「{active_target_single['display_name']}」のデータを取得・更新"
+        )
+        if st.button(
+            btn_label_single, type="primary", key=f"btn_update_active_target_single"
+        ):
+            with st.spinner(
+                f"「{active_target_single['display_name']}」の価格情報をスクレイピング中..."
             ):
                 try:
-                    # scrape_prices_for_keyword_and_site にはブランド名のみを渡す
-                    prices = scrape_prices_for_keyword_and_site(
-                        active_target["site"],
-                        active_target["brand_keyword"],  # ブランド名のみ
+                    prices_single = scrape_prices_for_keyword_and_site(
+                        active_target_single["site"],
+                        active_target_single["brand_keyword"],
                         max_items_override=SITE_CONFIGS.get(
-                            active_target["site"], {}
+                            active_target_single["site"], {}
                         ).get("max_items_to_scrape", 30),
                     )
-                    if prices:
-                        # save_daily_stats_for_site にもブランド名のみを渡す
+                    if prices_single:
                         save_daily_stats_for_site(
-                            active_target["site"],
-                            active_target["brand_keyword"],
-                            prices,
+                            active_target_single["site"],
+                            active_target_single["brand_keyword"],
+                            prices_single,
                         )
                         st.success(
-                            f"「{active_target['display_name']}」のデータを更新しました。"
+                            f"「{active_target_single['display_name']}」のデータを更新しました。"
                         )
                         load_price_data_cached.clear()
                         st.rerun()
                     else:
                         st.warning(
-                            f"「{active_target['display_name']}」の価格情報が見つかりませんでした。"
+                            f"「{active_target_single['display_name']}」の価格情報が見つかりませんでした。"
                         )
                 except Exception as e:
                     st.error(f"データ取得中にエラーが発生しました: {e}")
     else:
-        st.info("ブランドを選択するとデータ更新ボタンが表示されます。")
+        st.info("ブランドを選択すると個別データ更新ボタンが表示されます。")
 
     st.markdown("---")
     st.subheader("チャート表示設定")
@@ -363,100 +431,93 @@ with st.sidebar:
         30,
         DEFAULT_MOVING_AVERAGE_SHORT,
         1,
-        key="ni_ma_short_multi_site_brand",
+        key="ni_ma_short_v3",
     )
     ma_long_period = st.number_input(
-        "長期移動平均 (日)",
-        0,
-        90,
-        DEFAULT_MOVING_AVERAGE_LONG,
-        1,
-        key="ni_ma_long_multi_site_brand",
+        "長期移動平均 (日)", 0, 90, DEFAULT_MOVING_AVERAGE_LONG, 1, key="ni_ma_long_v3"
     )
 
-    show_range_option_multi_brand = False
-    primary_target_for_band_display_name = None  # 表示名で比較
+    show_range_option_multi_brand_v3 = False
+    primary_target_for_band_display_name_v3 = None
     if st.session_state.last_active_target_for_update and any(
         t["display_name"]
         == st.session_state.last_active_target_for_update["display_name"]
         for t in st.session_state.selected_targets_for_chart
     ):
-        primary_target_for_band_display_name = (
+        primary_target_for_band_display_name_v3 = (
             st.session_state.last_active_target_for_update["display_name"]
         )
-        show_range_option_multi_brand = st.checkbox(
-            f"「{primary_target_for_band_display_name}」の価格範囲を表示",
+        show_range_option_multi_brand_v3 = st.checkbox(
+            f"「{primary_target_for_band_display_name_v3}」の価格範囲を表示",
             value=False,
-            key="cb_show_range_multi_site_brand",
+            key="cb_show_range_v3",
         )
 
     st.markdown("---")
-    with st.expander("ブランド管理 (追加)"):
+    with st.expander("ブランド管理", expanded=False):
         st.subheader("新しいブランドの追加")
-        add_sites_list = list(load_brands_cached().keys())
-        if not add_sites_list:
-            add_sites_list = ["mercari"]
-        add_selected_site_for_new_brand = st.selectbox(
-            "追加先のサイト", add_sites_list, key="add_brand_site_sel_brand"
+        add_sites_list_manage = list(load_brands_cached().keys())
+        if not add_sites_list_manage:
+            add_sites_list_manage = ["mercari"]
+        add_selected_site_manage = st.selectbox(
+            "追加先のサイト", add_sites_list_manage, key="add_brand_site_sel_manage_v3"
         )
 
-        site_categories_for_new_brand = list(
-            load_brands_cached()
-            .get(add_selected_site_for_new_brand, {"未分類": []})
-            .keys()
+        site_categories_manage = list(
+            load_brands_cached().get(add_selected_site_manage, {"未分類": []}).keys()
         )
-        if not site_categories_for_new_brand:
-            site_categories_for_new_brand = ["未分類"]
+        if not site_categories_manage:
+            site_categories_manage = ["未分類"]
 
-        add_selected_category_for_new_brand = st.selectbox(
+        add_selected_category_manage = st.selectbox(
             "追加先のカテゴリ (整理用)",
-            site_categories_for_new_brand,
-            key="add_brand_cat_sel_multi_site_brand",
+            site_categories_manage,
+            key="add_brand_cat_sel_manage_v3",
         )
-        new_brand_name_input_for_add = st.text_input(
-            "追加するブランド名", key="add_brand_name_in_multi_site_brand"
+        new_brand_name_input_manage = st.text_input(
+            "追加するブランド名", key="add_brand_name_in_manage_v3"
         )
 
-        if st.button("このブランドを追加", key="add_brand_btn_multi_site_brand"):
+        if st.button("このブランドを追加", key="add_brand_btn_manage_v3"):
             if (
-                add_selected_site_for_new_brand
-                and add_selected_category_for_new_brand
-                and new_brand_name_input_for_add
+                add_selected_site_manage
+                and add_selected_category_manage
+                and new_brand_name_input_manage
             ):
-                new_brand_name_to_add = new_brand_name_input_for_add.strip()
+                new_brand_name_to_add = new_brand_name_input_manage.strip()
                 if not new_brand_name_to_add:
                     st.warning("ブランド名を入力してください。")
                 else:
                     all_brands_data_for_add = load_brands_cached()
-                    if add_selected_site_for_new_brand not in all_brands_data_for_add:
-                        all_brands_data_for_add[add_selected_site_for_new_brand] = {}
+                    if add_selected_site_manage not in all_brands_data_for_add:
+                        all_brands_data_for_add[add_selected_site_manage] = {}
                     if (
-                        add_selected_category_for_new_brand
-                        not in all_brands_data_for_add[add_selected_site_for_new_brand]
+                        add_selected_category_manage
+                        not in all_brands_data_for_add[add_selected_site_manage]
                     ):
-                        all_brands_data_for_add[add_selected_site_for_new_brand][
-                            add_selected_category_for_new_brand
+                        all_brands_data_for_add[add_selected_site_manage][
+                            add_selected_category_manage
                         ] = []
 
                     if (
                         new_brand_name_to_add
-                        in all_brands_data_for_add[add_selected_site_for_new_brand][
-                            add_selected_category_for_new_brand
+                        in all_brands_data_for_add[add_selected_site_manage][
+                            add_selected_category_manage
                         ]
                     ):
                         st.warning(
-                            f"ブランド「{new_brand_name_to_add}」はサイト「{add_selected_site_for_new_brand}」のカテゴリ「{add_selected_category_for_new_brand}」に既に存在します。"
+                            f"ブランド「{new_brand_name_to_add}」はサイト「{add_selected_site_manage}」のカテゴリ「{add_selected_category_manage}」に既に存在します。"
                         )
                     else:
-                        all_brands_data_for_add[add_selected_site_for_new_brand][
-                            add_selected_category_for_new_brand
+                        all_brands_data_for_add[add_selected_site_manage][
+                            add_selected_category_manage
                         ].append(new_brand_name_to_add)
-                        all_brands_data_for_add[add_selected_site_for_new_brand][
-                            add_selected_category_for_new_brand
+                        all_brands_data_for_add[add_selected_site_manage][
+                            add_selected_category_manage
                         ].sort()
                         if save_brands_to_json(all_brands_data_for_add):
                             st.success(
-                                f"ブランド「{new_brand_name_to_add}」をサイト「{add_selected_site_for_new_brand}」のカテゴリ「{add_selected_category_for_new_brand}」に追加しました。"
+                                f"ブランド「{new_brand_name_to_add}」をサイト「{add_selected_site_manage}」のカテゴリ「{add_selected_category_manage}」に追加しました。"
                             )
                             st.rerun()
             else:
@@ -464,17 +525,191 @@ with st.sidebar:
                     "追加先のサイト、カテゴリ、ブランド名をすべて入力してください。"
                 )
 
+        st.markdown("---")
+        st.subheader("既存ブランドの編集/削除")
+        edit_sites_list = list(load_brands_cached().keys())
+        if not edit_sites_list:
+            edit_sites_list = ["---"]
+        edit_selected_site = st.selectbox(
+            "編集/削除するブランドのサイト",
+            edit_sites_list,
+            key="edit_brand_site_sel_v3",
+            index=0 if "---" not in edit_sites_list else edit_sites_list.index("---"),
+        )
+
+        if edit_selected_site != "---" and edit_selected_site in brands_data_all_sites:
+            edit_categories_list = list(
+                brands_data_all_sites[edit_selected_site].keys()
+            )
+            if not edit_categories_list:
+                edit_categories_list = ["---"]
+            edit_selected_category = st.selectbox(
+                "カテゴリ",
+                edit_categories_list,
+                key="edit_brand_cat_sel_v3",
+                index=(
+                    0
+                    if "---" not in edit_categories_list
+                    else edit_categories_list.index("---")
+                ),
+            )
+
+            if (
+                edit_selected_category != "---"
+                and edit_selected_category in brands_data_all_sites[edit_selected_site]
+            ):
+                edit_brands_list = list(
+                    brands_data_all_sites[edit_selected_site][edit_selected_category]
+                )
+                if not edit_brands_list:
+                    edit_brands_list = ["---"]
+                edit_selected_brand = st.selectbox(
+                    "ブランド",
+                    edit_brands_list,
+                    key="edit_brand_name_sel_v3",
+                    index=(
+                        0
+                        if "---" not in edit_brands_list
+                        else edit_brands_list.index("---")
+                    ),
+                )
+
+                if edit_selected_brand != "---":
+                    st.markdown(
+                        f"**編集/削除対象:** `{edit_selected_site} > {edit_selected_category} > {edit_selected_brand}`"
+                    )
+                    st.markdown("**ブランド情報の変更:**")
+                    all_categories_for_move = list(
+                        brands_data_all_sites[edit_selected_site].keys()
+                    )
+                    new_category_for_move = st.selectbox(
+                        "移動先の新しいカテゴリ",
+                        all_categories_for_move,
+                        index=(
+                            all_categories_for_move.index(edit_selected_category)
+                            if edit_selected_category in all_categories_for_move
+                            else 0
+                        ),
+                        key="edit_brand_new_cat_sel_v3",
+                    )
+                    new_brand_name_for_edit = st.text_input(
+                        "新しいブランド名 (変更する場合)",
+                        value=edit_selected_brand,
+                        key="edit_brand_new_name_input_v3",
+                    )
+
+                    if st.button("変更を保存", key="save_brand_edit_btn_v3"):
+                        new_brand_name_strip = new_brand_name_for_edit.strip()
+                        if not new_brand_name_strip:
+                            st.warning("新しいブランド名を入力してください。")
+                        else:
+                            brands_data_to_edit = load_brands_cached()
+                            if (
+                                edit_selected_brand
+                                in brands_data_to_edit[edit_selected_site][
+                                    edit_selected_category
+                                ]
+                            ):
+                                brands_data_to_edit[edit_selected_site][
+                                    edit_selected_category
+                                ].remove(edit_selected_brand)
+                            if (
+                                new_category_for_move
+                                not in brands_data_to_edit[edit_selected_site]
+                            ):
+                                brands_data_to_edit[edit_selected_site][
+                                    new_category_for_move
+                                ] = []
+                            if (
+                                new_brand_name_strip
+                                in brands_data_to_edit[edit_selected_site][
+                                    new_category_for_move
+                                ]
+                            ):
+                                st.warning(
+                                    f"ブランド「{new_brand_name_strip}」はカテゴリ「{new_category_for_move}」に既に存在します。元のブランドを復元します。"
+                                )
+                                if (
+                                    edit_selected_brand
+                                    not in brands_data_to_edit[edit_selected_site][
+                                        edit_selected_category
+                                    ]
+                                ):
+                                    brands_data_to_edit[edit_selected_site][
+                                        edit_selected_category
+                                    ].append(edit_selected_brand)
+                            else:
+                                brands_data_to_edit[edit_selected_site][
+                                    new_category_for_move
+                                ].append(new_brand_name_strip)
+                                brands_data_to_edit[edit_selected_site][
+                                    new_category_for_move
+                                ].sort()
+                                if save_brands_to_json(brands_data_to_edit):
+                                    st.success(
+                                        f"ブランド「{edit_selected_brand}」を「{new_brand_name_strip}」(カテゴリ: {new_category_for_move}) に変更しました。"
+                                    )
+                                    st.rerun()
+
+                    st.markdown("**ブランドの削除:**")
+                    if st.button(
+                        f"「{edit_selected_brand}」を削除する",
+                        type="secondary",
+                        key="delete_brand_btn_v3",
+                    ):
+                        if "confirm_delete_brand" not in st.session_state:
+                            st.session_state.confirm_delete_brand = False
+                        st.session_state.confirm_delete_brand = True
+                        st.warning(
+                            f"本当に「{edit_selected_site} > {edit_selected_category} > {edit_selected_brand}」を削除しますか？"
+                        )
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button(
+                                "はい、削除します",
+                                type="primary",
+                                key="confirm_delete_yes_v3",
+                            ):
+                                brands_data_to_delete = load_brands_cached()
+                                if (
+                                    edit_selected_brand
+                                    in brands_data_to_delete[edit_selected_site][
+                                        edit_selected_category
+                                    ]
+                                ):
+                                    brands_data_to_delete[edit_selected_site][
+                                        edit_selected_category
+                                    ].remove(edit_selected_brand)
+                                    if save_brands_to_json(brands_data_to_delete):
+                                        st.success(
+                                            f"ブランド「{edit_selected_brand}」を削除しました。"
+                                        )
+                                        st.session_state.confirm_delete_brand = False
+                                        st.rerun()
+                                else:
+                                    st.error(
+                                        "削除対象のブランドが見つかりませんでした。"
+                                    )
+                                st.session_state.confirm_delete_brand = False
+                        with col2:
+                            if st.button(
+                                "いいえ、キャンセルします", key="confirm_delete_no_v3"
+                            ):
+                                st.session_state.confirm_delete_brand = False
+                                st.info("削除はキャンセルされました。")
+                                st.rerun()
+
 if st.session_state.selected_targets_for_chart:
     dataframes_to_plot_dict_main = {}
     any_data_loaded_for_chart_main = False
     for target in st.session_state.selected_targets_for_chart:
-        # load_price_data_cached にはブランド名のみを渡す
         df = load_price_data_cached(target["site"], target["brand_keyword"])
         if not df.empty:
             dataframes_to_plot_dict_main[target["display_name"]] = {
                 "df": df,
                 "site": target["site"],
-                "brand_keyword": target["brand_keyword"],  # ここはブランド名のみ
+                "brand_keyword": target["brand_keyword"],
             }
             any_data_loaded_for_chart_main = True
 
@@ -509,8 +744,8 @@ if st.session_state.selected_targets_for_chart:
             dataframes_to_plot_dict_main,
             ma_short_period,
             ma_long_period,
-            show_price_range_for_primary=show_range_option_multi_brand,
-            primary_target_for_band_display=primary_target_for_band_display_name,
+            show_price_range_for_primary=show_range_option_multi_brand_v3,
+            primary_target_for_band_display=primary_target_for_band_display_name_v3,
         )
         st.plotly_chart(price_chart, use_container_width=True)
 
