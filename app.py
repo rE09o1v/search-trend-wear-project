@@ -456,70 +456,72 @@ with st.sidebar:
         )
 
     st.markdown("---")
-    with st.expander("ブランド管理", expanded=False):
+    with st.expander("ブランド管理 (追加)"):
         st.subheader("新しいブランドの追加")
-        add_sites_list_manage = list(load_brands_cached().keys())
-        if not add_sites_list_manage:
-            add_sites_list_manage = ["mercari"]
-        add_selected_site_manage = st.selectbox(
-            "追加先のサイト", add_sites_list_manage, key="add_brand_site_sel_manage_v3"
+        add_sites_list = list(load_brands_cached().keys())
+        if not add_sites_list:
+            add_sites_list = ["mercari"]
+        add_selected_site_for_new_brand = st.selectbox(
+            "追加先のサイト", add_sites_list, key="add_brand_site_sel_brand"
         )
 
-        site_categories_manage = list(
-            load_brands_cached().get(add_selected_site_manage, {"未分類": []}).keys()
+        site_categories_for_new_brand = list(
+            load_brands_cached()
+            .get(add_selected_site_for_new_brand, {"未分類": []})
+            .keys()
         )
-        if not site_categories_manage:
-            site_categories_manage = ["未分類"]
+        if not site_categories_for_new_brand:
+            site_categories_for_new_brand = ["未分類"]
 
-        add_selected_category_manage = st.selectbox(
+        add_selected_category_for_new_brand = st.selectbox(
             "追加先のカテゴリ (整理用)",
-            site_categories_manage,
-            key="add_brand_cat_sel_manage_v3",
+            site_categories_for_new_brand,
+            key="add_brand_cat_sel_multi_site_brand",
         )
-        new_brand_name_input_manage = st.text_input(
-            "追加するブランド名", key="add_brand_name_in_manage_v3"
+        new_brand_name_input_for_add = st.text_input(
+            "追加するブランド名", key="add_brand_name_in_multi_site_brand"
         )
 
-        if st.button("このブランドを追加", key="add_brand_btn_manage_v3"):
+        if st.button("このブランドを追加", key="add_brand_btn_multi_site_brand"):
             if (
-                add_selected_site_manage
-                and add_selected_category_manage
-                and new_brand_name_input_manage
+                add_selected_site_for_new_brand
+                and add_selected_category_for_new_brand
+                and new_brand_name_input_for_add
             ):
-                new_brand_name_to_add = new_brand_name_input_manage.strip()
+                new_brand_name_to_add = new_brand_name_input_for_add.strip()
                 if not new_brand_name_to_add:
                     st.warning("ブランド名を入力してください。")
                 else:
                     all_brands_data_for_add = load_brands_cached()
-                    if add_selected_site_manage not in all_brands_data_for_add:
-                        all_brands_data_for_add[add_selected_site_manage] = {}
+                    if add_selected_site_for_new_brand not in all_brands_data_for_add:
+                        all_brands_data_for_add[add_selected_site_for_new_brand] = {}
                     if (
-                        add_selected_category_manage
-                        not in all_brands_data_for_add[add_selected_site_manage]
+                        add_selected_category_for_new_brand
+                        not in all_brands_data_for_add[add_selected_site_for_new_brand]
                     ):
-                        all_brands_data_for_add[add_selected_site_manage][
-                            add_selected_category_manage
+                        all_brands_data_for_add[add_selected_site_for_new_brand][
+                            add_selected_category_for_new_brand
                         ] = []
 
                     if (
                         new_brand_name_to_add
-                        in all_brands_data_for_add[add_selected_site_manage][
-                            add_selected_category_manage
+                        in all_brands_data_for_add[add_selected_site_for_new_brand][
+                            add_selected_category_for_new_brand
                         ]
                     ):
                         st.warning(
-                            f"ブランド「{new_brand_name_to_add}」はサイト「{add_selected_site_manage}」のカテゴリ「{add_selected_category_manage}」に既に存在します。"
+                            f"ブランド「{new_brand_name_to_add}」はサイト「{add_selected_site_for_new_brand}」のカテゴリ「{add_selected_category_for_new_brand}」に既に存在します。"
                         )
                     else:
-                        all_brands_data_for_add[add_selected_site_manage][
-                            add_selected_category_manage
+                        all_brands_data_for_add[add_selected_site_for_new_brand][
+                            add_selected_category_for_new_brand
                         ].append(new_brand_name_to_add)
-                        all_brands_data_for_add[add_selected_site_manage][
-                            add_selected_category_manage
+                        all_brands_data_for_add[add_selected_site_for_new_brand][
+                            add_selected_category_for_new_brand
                         ].sort()
                         if save_brands_to_json(all_brands_data_for_add):
                             st.success(
-                                f"ブランド「{new_brand_name_to_add}」をサイト「{add_selected_site_manage}」のカテゴリ「{add_selected_category_manage}」に追加しました。"
+                                f"ブランド「{new_brand_name_to_add}」をサイト「{add_selected_site_for_new_brand}」のカテゴリ「{add_selected_category_for_new_brand}」に追加しました。"
                             )
                             st.rerun()
             else:
@@ -528,179 +530,64 @@ with st.sidebar:
                 )
 
         st.markdown("---")
-        st.subheader("既存ブランドの編集/削除")
-        edit_sites_list = list(load_brands_cached().keys())
-        if not edit_sites_list:
-            edit_sites_list = ["---"]
-        edit_selected_site = st.selectbox(
-            "編集/削除するブランドのサイト",
-            edit_sites_list,
-            key="edit_brand_site_sel_v3",
-            index=0 if "---" not in edit_sites_list else edit_sites_list.index("---"),
+        st.subheader("ブランドの削除")
+        del_sites_list = list(load_brands_cached().keys())
+        if not del_sites_list:
+            del_sites_list = ["mercari"]
+        del_selected_site_for_brand = st.selectbox(
+            "削除するブランドのサイト", del_sites_list, key="del_brand_site_sel_brand"
         )
 
-        if edit_selected_site != "---" and edit_selected_site in brands_data_all_sites:
-            edit_categories_list = list(
-                brands_data_all_sites[edit_selected_site].keys()
+        del_site_categories = list(
+            load_brands_cached()
+            .get(del_selected_site_for_brand, {"未分類": []})
+            .keys()
+        )
+        if not del_site_categories:
+            del_site_categories = ["未分類"]
+
+        del_selected_category_for_brand = st.selectbox(
+            "削除するブランドのカテゴリ",
+            del_site_categories,
+            key="del_brand_cat_sel_multi_site_brand",
+        )
+
+        brands_in_category = load_brands_cached().get(del_selected_site_for_brand, {}).get(del_selected_category_for_brand, [])
+        if not brands_in_category:
+            st.info(f"「{del_selected_site_for_brand}」の「{del_selected_category_for_brand}」カテゴリにはブランドが登録されていません。")
+        else:
+            del_selected_brand = st.selectbox(
+                "削除するブランド",
+                brands_in_category,
+                key="del_brand_name_sel_multi_site_brand",
             )
-            if not edit_categories_list:
-                edit_categories_list = ["---"]
-            edit_selected_category = st.selectbox(
-                "カテゴリ",
-                edit_categories_list,
-                key="edit_brand_cat_sel_v3",
-                index=(
-                    0
-                    if "---" not in edit_categories_list
-                    else edit_categories_list.index("---")
-                ),
-            )
 
-            if (
-                edit_selected_category != "---"
-                and edit_selected_category in brands_data_all_sites[edit_selected_site]
-            ):
-                edit_brands_list = list(
-                    brands_data_all_sites[edit_selected_site][edit_selected_category]
-                )
-                if not edit_brands_list:
-                    edit_brands_list = ["---"]
-                edit_selected_brand = st.selectbox(
-                    "ブランド",
-                    edit_brands_list,
-                    key="edit_brand_name_sel_v3",
-                    index=(
-                        0
-                        if "---" not in edit_brands_list
-                        else edit_brands_list.index("---")
-                    ),
-                )
-
-                if edit_selected_brand != "---":
-                    st.markdown(
-                        f"**編集/削除対象:** `{edit_selected_site} > {edit_selected_category} > {edit_selected_brand}`"
-                    )
-                    st.markdown("**ブランド情報の変更:**")
-                    all_categories_for_move = list(
-                        brands_data_all_sites[edit_selected_site].keys()
-                    )
-                    new_category_for_move = st.selectbox(
-                        "移動先の新しいカテゴリ",
-                        all_categories_for_move,
-                        index=(
-                            all_categories_for_move.index(edit_selected_category)
-                            if edit_selected_category in all_categories_for_move
-                            else 0
-                        ),
-                        key="edit_brand_new_cat_sel_v3",
-                    )
-                    new_brand_name_for_edit = st.text_input(
-                        "新しいブランド名 (変更する場合)",
-                        value=edit_selected_brand,
-                        key="edit_brand_new_name_input_v3",
-                    )
-
-                    if st.button("変更を保存", key="save_brand_edit_btn_v3"):
-                        new_brand_name_strip = new_brand_name_for_edit.strip()
-                        if not new_brand_name_strip:
-                            st.warning("新しいブランド名を入力してください。")
-                        else:
-                            brands_data_to_edit = load_brands_cached()
-                            if (
-                                edit_selected_brand
-                                in brands_data_to_edit[edit_selected_site][
-                                    edit_selected_category
-                                ]
-                            ):
-                                brands_data_to_edit[edit_selected_site][
-                                    edit_selected_category
-                                ].remove(edit_selected_brand)
-                            if (
-                                new_category_for_move
-                                not in brands_data_to_edit[edit_selected_site]
-                            ):
-                                brands_data_to_edit[edit_selected_site][
-                                    new_category_for_move
-                                ] = []
-                            if (
-                                new_brand_name_strip
-                                in brands_data_to_edit[edit_selected_site][
-                                    new_category_for_move
-                                ]
-                            ):
-                                st.warning(
-                                    f"ブランド「{new_brand_name_strip}」はカテゴリ「{new_category_for_move}」に既に存在します。元のブランドを復元します。"
-                                )
-                                if (
-                                    edit_selected_brand
-                                    not in brands_data_to_edit[edit_selected_site][
-                                        edit_selected_category
-                                    ]
-                                ):
-                                    brands_data_to_edit[edit_selected_site][
-                                        edit_selected_category
-                                    ].append(edit_selected_brand)
-                            else:
-                                brands_data_to_edit[edit_selected_site][
-                                    new_category_for_move
-                                ].append(new_brand_name_strip)
-                                brands_data_to_edit[edit_selected_site][
-                                    new_category_for_move
-                                ].sort()
-                                if save_brands_to_json(brands_data_to_edit):
-                                    st.success(
-                                        f"ブランド「{edit_selected_brand}」を「{new_brand_name_strip}」(カテゴリ: {new_category_for_move}) に変更しました。"
-                                    )
-                                    st.rerun()
-
-                    st.markdown("**ブランドの削除:**")
-                    if st.button(
-                        f"「{edit_selected_brand}」を削除する",
-                        type="secondary",
-                        key="delete_brand_btn_v3",
+            if st.button("このブランドを削除", key="del_brand_btn_multi_site_brand", type="primary"):
+                if del_selected_brand:
+                    all_brands_data_for_del = load_brands_cached()
+                    if (
+                        del_selected_site_for_brand in all_brands_data_for_del
+                        and del_selected_category_for_brand in all_brands_data_for_del[del_selected_site_for_brand]
+                        and del_selected_brand in all_brands_data_for_del[del_selected_site_for_brand][del_selected_category_for_brand]
                     ):
-                        if "confirm_delete_brand" not in st.session_state:
-                            st.session_state.confirm_delete_brand = False
-                        st.session_state.confirm_delete_brand = True
-                        st.warning(
-                            f"本当に「{edit_selected_site} > {edit_selected_category} > {edit_selected_brand}」を削除しますか？"
-                        )
-
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button(
-                                "はい、削除します",
-                                type="primary",
-                                key="confirm_delete_yes_v3",
-                            ):
-                                brands_data_to_delete = load_brands_cached()
-                                if (
-                                    edit_selected_brand
-                                    in brands_data_to_delete[edit_selected_site][
-                                        edit_selected_category
-                                    ]
-                                ):
-                                    brands_data_to_delete[edit_selected_site][
-                                        edit_selected_category
-                                    ].remove(edit_selected_brand)
-                                    if save_brands_to_json(brands_data_to_delete):
-                                        st.success(
-                                            f"ブランド「{edit_selected_brand}」を削除しました。"
-                                        )
-                                        st.session_state.confirm_delete_brand = False
-                                        st.rerun()
-                                else:
-                                    st.error(
-                                        "削除対象のブランドが見つかりませんでした。"
-                                    )
-                                st.session_state.confirm_delete_brand = False
-                        with col2:
-                            if st.button(
-                                "いいえ、キャンセルします", key="confirm_delete_no_v3"
-                            ):
-                                st.session_state.confirm_delete_brand = False
-                                st.info("削除はキャンセルされました。")
-                                st.rerun()
+                        all_brands_data_for_del[del_selected_site_for_brand][del_selected_category_for_brand].remove(del_selected_brand)
+                        if save_brands_to_json(all_brands_data_for_del):
+                            st.success(
+                                f"ブランド「{del_selected_brand}」をサイト「{del_selected_site_for_brand}」のカテゴリ「{del_selected_category_for_brand}」から削除しました。"
+                            )
+                            # 関連するCSVファイルも削除
+                            safe_brand_keyword = re.sub(r'[\\/*?:"<>|]', "_", del_selected_brand)
+                            safe_site_name = re.sub(r'[\\/*?:"<>|]', "_", del_selected_site_for_brand)
+                            csv_file = DATA_DIR / f"{safe_site_name}_{safe_brand_keyword}.csv"
+                            if csv_file.exists():
+                                try:
+                                    csv_file.unlink()
+                                    st.info(f"関連するデータファイル（{csv_file.name}）も削除しました。")
+                                except Exception as e:
+                                    st.warning(f"データファイルの削除に失敗しました: {e}")
+                            st.rerun()
+                    else:
+                        st.error("指定されたブランドが見つかりませんでした。")
 
 if st.session_state.selected_targets_for_chart:
     dataframes_to_plot_dict_main = {}

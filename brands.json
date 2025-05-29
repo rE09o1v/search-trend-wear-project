@@ -1,14 +1,37 @@
 {
   "mercari": {
-    "ストリート": ["Supreme", "Stussy", "A BATHING APE"],
-    "モード系": ["Yohji Yamamoto", "COMME des GARCONS", "ISSEY MIYAKE"],
-    "アウトドア": ["THE NORTH FACE", "Patagonia", "Arc'teryx"],
-    "スニーカー": ["NIKE Air Jordan", "NIKE Dunk", "adidas Yeezy Boost"],
+    "ストリート": [
+      "A BATHING APE",
+      "Stussy",
+      "Supreme",
+      "test"
+    ],
+    "モード系": [
+      "Yohji Yamamoto",
+      "COMME des GARCONS",
+      "ISSEY MIYAKE"
+    ],
+    "アウトドア": [
+      "THE NORTH FACE",
+      "Patagonia",
+      "Arc'teryx"
+    ],
+    "スニーカー": [
+      "NIKE Air Jordan",
+      "NIKE Dunk",
+      "adidas Yeezy Boost"
+    ],
     "未分類": []
   },
   "rakuma": {
-    "レディース": ["SNIDEL", "FRAY I.D"],
-    "メンズカジュアル": ["BEAMS", "UNITED ARROWS"],
+    "レディース": [
+      "SNIDEL",
+      "FRAY I.D"
+    ],
+    "メンズカジュアル": [
+      "BEAMS",
+      "UNITED ARROWS"
+    ],
     "未分類": []
   }
 }
