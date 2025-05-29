@@ -6,8 +6,7 @@ import datetime
 import random
 import re
 from pathlib import Path
-from statistics import mean
-
+from statistics import mean, stdev
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService # Explicitly import Service
@@ -19,12 +18,12 @@ from selenium.common.exceptions import (
     NoSuchElementException,
     StaleElementReferenceException,
 )
-import pandas as pd
+import pandas as pd  # save_daily_stats で使用
 
 # === 設定 ===
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
-# BRAND_FILE は app.py 側で定義・使用
+# BRAND_FILE は app.py 側で定義・使用する想定
 
 # --- サイト別設定 ---
 SITE_CONFIGS = {
@@ -42,24 +41,26 @@ SITE_CONFIGS = {
             ".merPrice", # Older selector
             'span[class*="price"]', # Generic span with class containing "price"
         ],
-        "max_items_to_scrape": 30, # Default number of items to try and get
-        "wait_time_after_load": (3, 5), # (min_seconds, max_seconds)
-        "scroll_count": (2, 4), # (min_scrolls, max_scrolls)
-        "scroll_height": (400, 800), # (min_pixels, max_pixels) per scroll
-        "scroll_wait_time": (0.8, 1.8), # (min_seconds, max_seconds) after each scroll
+        "max_items_to_scrape": 30,  # サイトごとのデフォルト取得件数
+        "wait_time_after_load": (3, 5),  # ページ読み込み後のランダム待機時間 (min, max)
+        "scroll_count": (2, 4),  # スクロール回数 (min, max)
+        "scroll_height": (400, 800),  # スクロール高さ (min, max)
+        "scroll_wait_time": (0.8, 1.8),  # スクロール後の待機時間 (min, max)
     },
-    "rakuma": { # Placeholder for Rakuma
-        "url_template": "https://fril.jp/s?query={keyword}&sort=created_at&order=desc",
-        "item_container_selectors": [".item-box", ".another-item-selector"], # Example selectors
-        "price_inner_selectors": [".price", ".item-price__value"], # Example selectors
+    "rakuma": {  # 将来のサイト追加用テンプレート (実際のセレクタとは異なります)
+        "url_template": "https://fril.jp/s?query={keyword}&sort=created_at&order=desc",  # 仮
+        "item_container_selectors": [".item-box", ".another-item-selector"],  # 仮
+        "price_inner_selectors": [".price", ".item-price__value"],  # 仮
         "max_items_to_scrape": 25,
         "wait_time_after_load": (2, 4),
         "scroll_count": (2, 3),
         "scroll_height": (500, 700),
         "scroll_wait_time": (1.0, 2.0),
     },
+    # 他のサイトの設定をここに追加
 }
 
+# === 初期化 ===
 DATA_DIR.mkdir(exist_ok=True)
 
 # ChromeDriverのパス (Dockerfileでインストールされた場所)
@@ -107,25 +108,22 @@ def extract_price_from_text(text_content):
         price_digits = re.sub(r"[^0-9]", "", price_match_yen.group(1))
         if price_digits:
             return int(price_digits)
-    
-    stripped_text = text_content.strip()
-    if re.fullmatch(r"[0-9,]+", stripped_text):
-        price_digits_no_yen = re.sub(r"[^0-9]", "", stripped_text)
-        if price_digits_no_yen:
-            return int(price_digits_no_yen)
+    digits_only_match = re.fullmatch(r"[0-9,]+", text.strip())
+    if digits_only_match:
+        price_digits = re.sub(r"[^0-9]", "", digits_only_match.group(0))
+        if price_digits:
+            return int(price_digits)
     return None
 
 
-def scrape_prices_for_keyword_and_site(
-    site_name, keyword_to_search, max_items_override=None
-):
-    """Scrapes product prices for a given keyword from a specified site."""
+def scrape_prices_for_keyword_and_site(site_name, keyword, max_items_override=None):
+    """指定されたサイトとキーワードで価格リストを取得する"""
     if site_name not in SITE_CONFIGS:
         print(f"Error: Configuration for site '{site_name}' not found.")
         return []
 
     config = SITE_CONFIGS[site_name]
-    max_items_to_fetch = (
+    max_items = (
         max_items_override
         if max_items_override is not None
         else config.get("max_items_to_scrape", 20)
@@ -136,14 +134,13 @@ def scrape_prices_for_keyword_and_site(
         print(f"[{site_name}] WebDriver initialization failed. Aborting scrape for '{keyword_to_search}'.")
         return []
 
-    scraped_prices = []
-    search_url = config["url_template"].format(keyword=keyword_to_search)
-    
-    print(f"[{site_name}] Navigating to URL for keyword '{keyword_to_search}': {search_url}")
-
+    prices = []
     try:
-        driver.get(search_url)
-        time.sleep(random.uniform(*config.get("wait_time_after_load", (3, 5))))
+        url = config["url_template"].format(keyword=keyword)
+        driver.get(url)
+        print(f"[{site_name}] ページを読み込み中: {url}")
+
+        time.sleep(random.uniform(*config.get("wait_time_after_load", (2, 4))))
 
         num_scrolls = random.randint(*config.get("scroll_count", (1, 3)))
         for i in range(num_scrolls):
@@ -166,7 +163,10 @@ def scrape_prices_for_keyword_and_site(
                     print(f"[{site_name}] No items found with selector '{container_selector}' for '{keyword_to_search}'.")
                     continue 
 
-                print(f"[{site_name}] Found {len(item_elements)} potential items using selector '{container_selector}' for '{keyword_to_search}'.")
+                    print(
+                        f"[{site_name}] セレクタ '{container_selector}' で {len(item_elements)} 件の候補を検出"
+                    )
+                    found_items_in_current_attempt = True
 
                 for item_el in item_elements:
                     if items_found_count >= max_items_to_fetch:
@@ -191,123 +191,106 @@ def scrape_prices_for_keyword_and_site(
                             if extracted_p_fallback is not None:
                                 price = extracted_p_fallback
 
-                        if price is not None:
-                            scraped_prices.append(price)
-                            items_found_count += 1
-                    except StaleElementReferenceException:
-                        print(f"[{site_name}] StaleElementReferenceException for an item. Skipping it. Keyword: '{keyword_to_search}'.")
-                        break 
-                    except Exception as e_item_proc:
-                        print(f"[{site_name}] Error processing individual item: {e_item_proc}. Keyword: '{keyword_to_search}'.")
-                        continue 
-                
-                if items_found_count > 0 and len(item_elements) > 0: 
-                    print(f"[{site_name}] Processed {items_found_count}/{max_items_to_fetch} items using '{container_selector}'.")
+                        if price:
+                            prices.append(price)
+                            items_processed_count += 1
+                        time.sleep(random.uniform(0.05, 0.1))
+                    if items_processed_count >= max_items:
+                        break
+                except TimeoutException:
+                    continue
+                except StaleElementReferenceException:
+                    break
+                except Exception:
+                    continue
 
-            except TimeoutException:
-                print(f"[{site_name}] Timeout waiting for items with selector '{container_selector}' for '{keyword_to_search}'.")
-            except Exception as e_container_sel:
-                print(f"[{site_name}] Error with container selector '{container_selector}': {e_container_sel}. Keyword: '{keyword_to_search}'.")
-        
-        if not scraped_prices:
-            print(f"[{site_name}] No prices found for keyword '{keyword_to_search}' after trying all selectors.")
+            if items_processed_count >= max_items or not found_items_in_current_attempt:
+                break
+            if items_processed_count < max_items:
+                driver.execute_script(
+                    f"window.scrollBy(0, {random.randint(600,1000)});"
+                )
+                time.sleep(random.uniform(1, 2))
+            attempts += 1
 
+        if not prices:
+            print(f"[{site_name}] 価格データが見つかりませんでした: {keyword}")
     except TimeoutException:
-        print(f"[{site_name}] Page load timeout for URL: {search_url}")
-    except Exception as e_scrape_main:
-        print(f"[{site_name}] Main scraping error for '{keyword_to_search}': {e_scrape_main}")
+        print(f"[{site_name}] タイムアウト: {keyword} ({url})")
+    except Exception as e:
+        print(f"[{site_name}] スクレイピングエラー ({keyword}): {e}")
     finally:
         if driver:
-            try:
-                driver.quit()
-                print(f"[{site_name}] WebDriver quit successfully for '{keyword_to_search}'.")
-            except Exception as e_quit:
-                print(f"[{site_name}] Error quitting WebDriver: {e_quit}")
+            driver.quit()
 
-    print(f"[{site_name}] Scraped {len(scraped_prices)} prices for keyword '{keyword_to_search}'.")
-    return scraped_prices
+    print(
+        f"[{site_name}] キーワード '{keyword}' で {len(prices)} 件の価格を取得しました。"
+    )
+    return prices
 
 
-def save_daily_stats_for_site(
-    site_name, brand_keyword, prices_list 
-):
-    """Saves daily statistics (count, avg, min, max) for scraped prices to a CSV file."""
-    if not prices_list: 
-        print(f"[{site_name}] No price data to save for brand '{brand_keyword}'.")
+def save_daily_stats_for_site(site_name, keyword, prices):
+    """取得した価格リストから統計情報を計算し、サイトとキーワードに応じたCSVに保存する"""
+    if not prices:
+        print(f"[{site_name}] 保存する価格データがありません: {keyword}")
         return
 
-    today_iso_str = datetime.date.today().isoformat()
-    safe_brand_keyword = re.sub(r'[\\/*?:"<>|]', "_", brand_keyword)
+    today_str = datetime.date.today().isoformat()
+
+    # ファイル名にサイト名とキーワードを含める
+    safe_keyword = re.sub(r'[\\/*?:"<>|]', "_", keyword)
     safe_site_name = re.sub(r'[\\/*?:"<>|]', "_", site_name)
-    csv_filename = f"{safe_site_name}_{safe_brand_keyword}.csv"
-    csv_filepath = DATA_DIR / csv_filename
+    file_name = f"{safe_site_name}_{safe_keyword}.csv"
+    file_path = DATA_DIR / file_name
 
-    num_prices = len(prices_list)
-    avg_price = round(mean(prices_list), 2) if prices_list else 0
-    min_price = min(prices_list) if prices_list else 0
-    max_price = max(prices_list) if prices_list else 0
+    count = len(prices)
+    average_price = mean(prices) if prices else 0
+    min_price = min(prices) if prices else 0
+    max_price = max(prices) if prices else 0
 
-    new_row_dict = {
-        "date": today_iso_str,
-        "site": site_name,
-        "keyword": brand_keyword, 
-        "count": num_prices,
-        "average_price": avg_price,
+    file_exists = file_path.exists()
+
+    new_data_row = {
+        "date": today_str,
+        "site": site_name,  # サイト名も記録
+        "keyword": keyword,
+        "count": count,
+        "average_price": round(average_price, 2),
         "min_price": min_price,
         "max_price": max_price,
     }
-    
-    expected_columns = list(new_row_dict.keys())
 
+    # Pandas DataFrame を使用してデータの重複をチェックし、更新または追記
     try:
-        df_to_save = pd.DataFrame() 
-
-        if csv_filepath.exists() and os.path.getsize(csv_filepath) > 0:
-            try:
-                df_existing = pd.read_csv(csv_filepath)
-                for col in expected_columns:
-                    if col not in df_existing.columns:
-                        df_existing[col] = None 
-                df_to_save = df_existing
-            except pd.errors.EmptyDataError:
-                print(f"Warning: CSV file {csv_filepath} is empty. A new file will be created.")
-                df_to_save = pd.DataFrame(columns=expected_columns) 
-            except Exception as e_read:
-                print(f"Error reading CSV {csv_filepath}: {e_read}. A new file will be created/overwritten.")
-                df_to_save = pd.DataFrame(columns=expected_columns) 
-        else:
-            df_to_save = pd.DataFrame(columns=expected_columns)
-
-        if all(col in df_to_save.columns for col in ["date", "site", "keyword"]):
-            mask_today_entry = (
-                (df_to_save["date"] == today_iso_str) &
-                (df_to_save["site"] == site_name) &
-                (df_to_save["keyword"] == brand_keyword)
-            )
-            indices_today_entry = df_to_save[mask_today_entry].index
-        else: 
-            indices_today_entry = pd.Index([])
-
-
-        if not indices_today_entry.empty: 
-            update_cols = ["count", "average_price", "min_price", "max_price"]
-            df_to_save.loc[indices_today_entry, update_cols] = [
-                num_prices, avg_price, min_price, max_price
+        if file_exists and os.path.getsize(file_path) > 0:
+            df = pd.read_csv(file_path)
+            # 今日の日付のデータが存在するか確認
+            existing_today_data = df[
+                (df["date"] == today_str)
+                & (df["site"] == site_name)
+                & (df["keyword"] == keyword)
             ]
-            print(f"[{site_name}] Updated today's data for '{brand_keyword}' in {csv_filename}.")
-        else: 
-            df_new_row = pd.DataFrame([new_row_dict])
-            df_to_save = pd.concat([df_to_save, df_new_row], ignore_index=True)
-            print(f"[{site_name}] Appended new data for '{brand_keyword}' to {csv_filename}.")
-        
-        if 'date' in df_to_save.columns:
-            try:
-                df_to_save['date'] = pd.to_datetime(df_to_save['date'])
-                df_to_save = df_to_save.sort_values(by=['date', 'site', 'keyword'], ascending=[False, True, True])
-            except Exception as e_date_sort:
-                print(f"Warning: Could not convert 'date' column to datetime or sort: {e_date_sort}")
-        
-        df_to_save.to_csv(csv_filepath, index=False, encoding="utf-8")
+            if not existing_today_data.empty:
+                # 更新
+                df.loc[
+                    existing_today_data.index,
+                    ["count", "average_price", "min_price", "max_price"],
+                ] = [count, round(average_price, 2), min_price, max_price]
+                df.to_csv(file_path, index=False, encoding="utf-8")
+                print(
+                    f"[{site_name}] '{keyword}' の本日のデータを更新しました: {file_name}"
+                )
+                return
+        else:  # ファイルが存在しないか空の場合
+            df = pd.DataFrame(columns=new_data_row.keys())  # ヘッダーを定義
+
+        # 追記 (pd.concat を使う方が安全)
+        new_df_row = pd.DataFrame([new_data_row])
+        df = pd.concat([df, new_df_row], ignore_index=True)
+        df.to_csv(
+            file_path, index=False, encoding="utf-8"
+        )  # ヘッダーは初回のみ書き込まれる
+        print(f"[{site_name}] '{keyword}' の価格統計を保存しました: {file_name}")
 
     except IOError as e_io:
         print(f"IOError writing to CSV file {csv_filepath}: {e_io}")
