@@ -132,23 +132,27 @@ def create_multi_brand_price_trend_chart(
     fig = make_subplots(specs=[[{"secondary_y": False}]])
     color_idx = 0
 
-    for full_kw, df_data in dataframes_dict.items():
-        site, keyword = df_data["site"], df_data["keyword"]  # 表示名に使う
+    for (
+        target_display_key,
+        df_data,
+    ) in dataframes_dict.items():  # target_display_key は "サイト: ブランド名"
+        # df_data は {'df': DataFrame, 'site': str, 'brand_keyword': str} の形式
         df = df_data["df"]
         site_name = df_data["site"]
-        brand_name = df_data["brand_keyword"]
+        brand_name = df_data["brand_keyword"]  # ここはブランド名のみ
 
         if df.empty or "average_price" not in df.columns:
             continue
 
         current_color = PLOTLY_COLORS[color_idx % len(PLOTLY_COLORS)]
+        # 凡例の表示名: サイト名は含めるが、カテゴリ名は含めない
         legend_name_prefix = f"{site_name}: {brand_name}"
 
         fig.add_trace(
             go.Scatter(
                 x=df["date"],
                 y=df["average_price"],
-                name=f"{display_name} 平均",
+                name=f"{legend_name_prefix} 平均",
                 mode="lines+markers",
                 line=dict(color=current_color, width=2),
             )
@@ -198,7 +202,7 @@ def create_multi_brand_price_trend_chart(
                 go.Scatter(
                     x=df["date"],
                     y=df[f"ma_short"],
-                    name=f"{display_name} {ma_short}日MA",
+                    name=f"{legend_name_prefix} {ma_short}日MA",
                     mode="lines",
                     line=dict(color=current_color, dash="dash"),
                     opacity=0.7,
@@ -212,7 +216,7 @@ def create_multi_brand_price_trend_chart(
                 go.Scatter(
                     x=df["date"],
                     y=df[f"ma_long"],
-                    name=f"{display_name} {ma_long}日MA",
+                    name=f"{legend_name_prefix} {ma_long}日MA",
                     mode="lines",
                     line=dict(color=current_color, dash="dot"),
                     opacity=0.7,
