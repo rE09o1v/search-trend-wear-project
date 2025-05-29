@@ -21,12 +21,12 @@ from selenium.common.exceptions import (
     NoSuchElementException,
     StaleElementReferenceException,
 )
-import pandas as pd
+import pandas as pd  # save_daily_stats で使用
 
 # === 設定 ===
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
-# BRAND_FILE は app.py 側で定義・使用
+# BRAND_FILE は app.py 側で定義・使用する想定
 
 # --- サイト別設定 ---
 SITE_CONFIGS = {
@@ -60,8 +60,10 @@ SITE_CONFIGS = {
         "scroll_height": (500, 700),
         "scroll_wait_time": (1.0, 2.0),
     },
+    # 他のサイトの設定をここに追加
 }
 
+# === 初期化 ===
 DATA_DIR.mkdir(exist_ok=True)
 
 

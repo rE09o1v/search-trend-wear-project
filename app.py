@@ -9,6 +9,7 @@ import time
 import re
 
 try:
+    # scraper.py から関数と設定をインポート
     from scraper import (
         scrape_prices_for_keyword_and_site,
         save_daily_stats_for_site,
@@ -131,7 +132,8 @@ def create_multi_brand_price_trend_chart(
     fig = make_subplots(specs=[[{"secondary_y": False}]])
     color_idx = 0
 
-    for target_display_key, df_data in dataframes_dict.items():
+    for full_kw, df_data in dataframes_dict.items():
+        site, keyword = df_data["site"], df_data["keyword"]  # 表示名に使う
         df = df_data["df"]
         site_name = df_data["site"]
         brand_name = df_data["brand_keyword"]
@@ -146,7 +148,7 @@ def create_multi_brand_price_trend_chart(
             go.Scatter(
                 x=df["date"],
                 y=df["average_price"],
-                name=f"{legend_name_prefix} 平均",
+                name=f"{display_name} 平均",
                 mode="lines+markers",
                 line=dict(color=current_color, width=2),
             )
@@ -196,7 +198,7 @@ def create_multi_brand_price_trend_chart(
                 go.Scatter(
                     x=df["date"],
                     y=df[f"ma_short"],
-                    name=f"{legend_name_prefix} {ma_short}日MA",
+                    name=f"{display_name} {ma_short}日MA",
                     mode="lines",
                     line=dict(color=current_color, dash="dash"),
                     opacity=0.7,
@@ -210,7 +212,7 @@ def create_multi_brand_price_trend_chart(
                 go.Scatter(
                     x=df["date"],
                     y=df[f"ma_long"],
-                    name=f"{legend_name_prefix} {ma_long}日MA",
+                    name=f"{display_name} {ma_long}日MA",
                     mode="lines",
                     line=dict(color=current_color, dash="dot"),
                     opacity=0.7,
