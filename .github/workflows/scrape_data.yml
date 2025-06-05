@@ -5,9 +5,6 @@ on:
     - cron: '0 21 * * *' # 日本時間午前6時に変更 (UTCで前日21時)
   workflow_dispatch:
 
-permissions: # ★★★ これを追加 ★★★
-  contents: write
-
 jobs:
   scrape_and_commit:
     runs-on: ubuntu-latest
