@@ -34,9 +34,6 @@ jobs:
           # または、全ブランド処理用のラッパースクリプトをここで呼び出す想定です。
           # ここでは仮に、scraper.pyがその機能を持つとします。
           python scraper.py # scraper.py を実行
-        env:
-          # もしスクリプト内で環境変数が必要な場合はここで設定
-          EXAMPLE_ENV_VAR: ${{ secrets.EXAMPLE_SECRET }}
 
       - name: Commit and push data changes
         run: |
