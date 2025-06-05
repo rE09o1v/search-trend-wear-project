@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5 # 最新バージョンを確認してください
         with:
-          python-version: '3.9' # requirements.txtと互換性のあるバージョンを指定
+          python-version: '3.12' # requirements.txtと互換性のあるバージョンを指定
 
       - name: Install dependencies
         run: |
