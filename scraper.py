@@ -27,30 +27,28 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 BRAND_FILE = BASE_DIR / "brands.json"
-PAGE_LOAD_TIMEOUT_SECONDS = 60  # Rakumaのタイムアウト対策として少し延長
-ELEMENT_WAIT_TIMEOUT_SECONDS = 15
+PAGE_LOAD_TIMEOUT_SECONDS = 75  # Rakuma SNIDEL のタイムアウト対策として全体的に延長
+ELEMENT_WAIT_TIMEOUT_SECONDS = 20  # 要素待機も少し延長
 
 # --- サイト別設定 ---
 SITE_CONFIGS = {
     "mercari": {
         "url_template": "https://jp.mercari.com/search?keyword={keyword}&status=on_sale&order=desc&sort=created_time",
         "item_container_selectors": [
-            'li[data-testid="item-cell"]',
-            'div[data-testid="item-cell"]',
+            'li[data-testid="item-cell"]',  # プライマリセレクタ
+            'div[data-testid="item-cell"]',  # フォールバック
         ],
         "price_inner_selectors": [
-            '[data-testid="price"]',
-            'span[class*="ItemPrice"]',  # Mercariの価格表示に使われる可能性のあるクラス
-            'span[class*="price"]',  # 一般的な価格表示
+            '[data-testid="price"]',  # プライマリ価格セレクタ
+            'span[class*="Price"]',  # 大文字小文字を区別しない Price を含むクラス
+            'span[class*="price"]',
         ],
         "max_items_to_scrape": 30,
-        "wait_time_after_load": (2, 3),
-        "scroll_count": (2, 3),
-        "scroll_height": (600, 1000),
-        "scroll_wait_time": (1.5, 2.5),
-        "headers": {  # Mercari用に言語設定を試みる
-            "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"
-        },
+        "wait_time_after_load": (2, 4),  # ページロード後の追加待機
+        "scroll_count": (2, 3),  # (min_scrolls, max_scrolls)
+        "scroll_height": (700, 1100),  # スクロール高さ
+        "scroll_wait_time": (1.8, 3.0),  # スクロール後の待機
+        "headers": {"Accept-Language": "ja-JP,ja;q=0.9"},  # 日本語を最優先に指定
     },
     "rakuma": {
         "url_template": "https://fril.jp/s?query={keyword}&sort=created_at&order=desc",
@@ -61,18 +59,17 @@ SITE_CONFIGS = {
         "scroll_count": (2, 3),
         "scroll_height": (500, 700),
         "scroll_wait_time": (1.0, 2.0),
-        # Rakumaのタイムアウトが特定ブランドで頻発する場合、ここにも個別タイムアウト設定を検討
-        # "page_load_timeout": 90 # 例: SNIDEL用
+        # "page_load_timeout": 90 # SNIDEL など個別に設定する場合
     },
 }
 
-INTER_BRAND_SLEEP_TIME = (3, 7)
-INTER_SITE_SLEEP_TIME = (5, 10)
+INTER_BRAND_SLEEP_TIME = (4, 8)
+INTER_SITE_SLEEP_TIME = (8, 15)
 
 DATA_DIR.mkdir(exist_ok=True)
 
 
-def setup_driver(site_name=None):  # サイト名を渡せるように変更
+def setup_driver(site_name=None):
     print(f"{datetime.datetime.now()} WebDriverセットアップ開始... (Site: {site_name})")
     options = Options()
     options.add_argument("--headless=new")
@@ -83,55 +80,44 @@ def setup_driver(site_name=None):  # サイト名を渡せるように変更
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
-
-    # サイト固有のヘッダー設定を適用 (Accept-Languageなど)
-    if site_name and site_name in SITE_CONFIGS and "headers" in SITE_CONFIGS[site_name]:
-        for key, value in SITE_CONFIGS[site_name]["headers"].items():
-            print(
-                f"{datetime.datetime.now()} Setting header for {site_name}: {key}={value}"
-            )
-            options.add_argument(
-                f"--header={key}: {value}"
-            )  # ヘッダー設定方法の確認が必要。これは一般的な引数ではない。
-            # Selenium 4では options.set_capability や execute_cdp_cmd を使う
-
-    # User-Agentは固定でも良いが、より動的にすることも可能
     options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
     )
-    # options.set_capability("goog:loggingPrefs", {'performance': 'ALL', 'browser': 'ALL'}) # 詳細ログが必要な場合
+    # options.set_capability("goog:loggingPrefs", {'performance': 'ALL', 'browser': 'ALL'})
 
     driver = None
     try:
         print(
             f"{datetime.datetime.now()} ChromeDriverManager().install() を試行します。"
         )
-        service = Service(ChromeDriverManager().install())
+        service = Service(
+            ChromeDriverManager().install()
+        )  # RunnerのChromeバージョンに合わせるため自動検出
         print(f"{datetime.datetime.now()} webdriver.Chrome() を試行します。")
-
-        # ヘッダーをより確実に設定する方法 (Selenium 4+)
-        # これは options.add_argument("--header=...") より推奨される
-        # ただし、この capabilities は ChromeOptions() に直接渡すのではなく、
-        # webdriver.Chrome の capabilities パラメータに渡すか、 options.capabilities にマージする必要がある
-        # options.set_capability("goog:chromeOptions", {"args": [], "prefs": {}, "mobileEmulation": {}}) # 初期化
-
-        # if site_name and site_name in SITE_CONFIGS and "headers" in SITE_CONFIGS[site_name]:
-        #     # ここで execute_cdp_cmd を使う方法もある
-        #     # driver.execute_cdp_cmd('Network.setExtraHTTPHeaders', {'headers': SITE_CONFIGS[site_name]["headers"]})
-        #     # ただし、driverインスタンス作成後でないと使えない
-        #     pass
-
         driver = webdriver.Chrome(service=service, options=options)
 
-        # driverインスタンス作成後にヘッダーを設定 (Mercariの場合)
-        if site_name == "mercari" and "headers" in SITE_CONFIGS["mercari"]:
+        # Accept-LanguageヘッダーをCDP経由で設定 (driverインスタンス作成直後)
+        if (
+            site_name
+            and site_name in SITE_CONFIGS
+            and "headers" in SITE_CONFIGS[site_name]
+        ):
+            headers_to_set = SITE_CONFIGS[site_name]["headers"]
             print(
-                f"{datetime.datetime.now()} Executing CDP command to set headers for Mercari."
+                f"{datetime.datetime.now()} [{site_name}] CDP: Network.setExtraHTTPHeaders にヘッダーを設定: {headers_to_set}"
             )
-            driver.execute_cdp_cmd(
-                "Network.setExtraHTTPHeaders",
-                {"headers": SITE_CONFIGS["mercari"]["headers"]},
-            )
+            try:
+                driver.execute_cdp_cmd("Network.enable", {})  # Networkドメインを有効化
+                driver.execute_cdp_cmd(
+                    "Network.setExtraHTTPHeaders", {"headers": headers_to_set}
+                )
+                print(
+                    f"{datetime.datetime.now()} [{site_name}] CDPヘッダー設定コマンド実行完了。"
+                )
+            except Exception as e_cdp:
+                print(
+                    f"{datetime.datetime.now()} ERROR [{site_name}] CDPヘッダー設定失敗: {e_cdp}"
+                )
 
         driver.execute_script(
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
@@ -142,7 +128,7 @@ def setup_driver(site_name=None):  # サイト名を渡せるように変更
         return driver
     except Exception as e:
         print(
-            f"{datetime.datetime.now()} WebDriverセットアップ中にエラー: {type(e).__name__} - {e}"
+            f"{datetime.datetime.now()} ERROR WebDriverセットアップ中にエラー: {type(e).__name__} - {e}"
         )
         if driver:
             driver.quit()
@@ -153,34 +139,40 @@ def extract_price_from_text(text_content, site_name="unknown"):
     if not text_content:
         return None
 
-    # print(f"DEBUG [{site_name}] extract_price_from_text に渡されたテキスト: '{text_content[:200].replace('\n',' ')}'") # 長すぎるので一部表示
+    # print(f"DEBUG [{site_name}] extract_price_from_text に渡されたテキスト(一部): '{text_content[:100].replace('\n',' ')}'")
 
+    # 日本円表記の優先順位を上げる
+    # 1. "¥1,234" や "¥ 1,234"
     price_match_yen_symbol_first = re.search(r"¥\s*([0-9,]+)", text_content)
     if price_match_yen_symbol_first:
         price_digits = re.sub(r"[^0-9]", "", price_match_yen_symbol_first.group(1))
         if price_digits:
             print(
-                f"DEBUG [{site_name}] extract_price (¥先頭): '{price_match_yen_symbol_first.group(0)}' -> {price_digits}"
+                f"DEBUG [{site_name}] extract_price (¥記号パターン): '{price_match_yen_symbol_first.group(0)}' -> {price_digits}"
             )
             return int(price_digits)
 
+    # 2. "1,234 円"
     price_match_yen_word_last = re.search(r"([0-9,]+)\s*円", text_content)
     if price_match_yen_word_last:
         price_digits = re.sub(r"[^0-9]", "", price_match_yen_word_last.group(1))
         if price_digits:
             print(
-                f"DEBUG [{site_name}] extract_price (円末尾): '{price_match_yen_word_last.group(0)}' -> {price_digits}"
+                f"DEBUG [{site_name}] extract_price (円表記パターン): '{price_match_yen_word_last.group(0)}' -> {price_digits}"
             )
             return int(price_digits)
 
+    # USドル表記の検出（日本円が取得できなかった場合のフォールバック情報として）
     price_match_usd = re.search(r"US\$\s*([0-9,]+\.?[0-9]*)", text_content)
     if price_match_usd:
         price_str_usd = price_match_usd.group(1).replace(",", "")
+        # ログには残すが、日本円ではないためスキップ
         print(
-            f"INFO [{site_name}] US$表記の価格を検出: '{price_match_usd.group(0)}' -> {price_str_usd}. Mercariでは日本円表示を期待しているためスキップ。"
+            f"INFO [{site_name}] US$表記の価格を検出: '{price_match_usd.group(0)}' -> {price_str_usd}. 日本円ではないため、この価格は使用しません。"
         )
-        return None
+        return None  # 日本円のみを対象とするためNoneを返す
 
+    # print(f"DEBUG [{site_name}] extract_price: 有効な価格形式が見つかりませんでした - '{text_content[:100].replace('\n',' ')}'")
     return None
 
 
@@ -192,7 +184,7 @@ def scrape_prices_for_keyword_and_site(
     )
     if site_name not in SITE_CONFIGS:
         print(
-            f"{datetime.datetime.now()} ERROR: サイト '{site_name}' の設定が見つかりません。"
+            f"{datetime.datetime.now()} ERROR: サイト '{site_name}' の設定がありません。"
         )
         return []
 
@@ -202,16 +194,14 @@ def scrape_prices_for_keyword_and_site(
         if max_items_override is not None
         else config.get("max_items_to_scrape", 20)
     )
-
-    # サイト固有のページロードタイムアウトがあれば使用
     current_page_load_timeout = config.get(
         "page_load_timeout", PAGE_LOAD_TIMEOUT_SECONDS
     )
 
-    driver = setup_driver(site_name=site_name)  # サイト名を渡す
+    driver = setup_driver(site_name=site_name)
     if not driver:
         print(
-            f"{datetime.datetime.now()} [{site_name}] WebDriver起動失敗のため '{keyword_to_search}' をスキップ。"
+            f"{datetime.datetime.now()} [{site_name}] WebDriver起動失敗 '{keyword_to_search}' スキップ。"
         )
         return []
 
@@ -219,48 +209,68 @@ def scrape_prices_for_keyword_and_site(
     try:
         url = config["url_template"].format(keyword=keyword_to_search)
         print(
-            f"{datetime.datetime.now()} [{site_name}] ページ読み込み試行 (最大{current_page_load_timeout}秒): {keyword_to_search} - {url}"
+            f"{datetime.datetime.now()} [{site_name}] ページ読み込み試行(最大{current_page_load_timeout}秒): {keyword_to_search} - {url}"
         )
         driver.set_page_load_timeout(current_page_load_timeout)
-
-        driver.get(
-            url
-        )  # ここで Network.setExtraHTTPHeaders が適用される (Mercariの場合)
-
+        driver.get(url)
         print(
             f"{datetime.datetime.now()} [{site_name}] ページ読み込み完了: {keyword_to_search}"
         )
 
-        # ページタイトルや一部内容をログに出力して、期待通りのページか確認
         try:
             page_title = driver.title
-            print(f"INFO [{site_name}] Page title: {page_title}")
-            # body_snippet = driver.find_element(By.TAG_NAME, "body").text[:200].replace("\n", " ")
-            # print(f"INFO [{site_name}] Body snippet: {body_snippet}")
-        except Exception as e_page_check:
-            print(f"WARN [{site_name}] Page title/snippet check failed: {e_page_check}")
+            print(
+                f"INFO [{site_name}] Page title for '{keyword_to_search}': '{page_title}'"
+            )
+            if site_name == "mercari" and (
+                not page_title or "メルカリ" not in page_title
+            ):
+                print(
+                    f"WARN [{site_name}] Mercariのページタイトルが期待と異なります: '{page_title}'. 캡챠 또는 지역 선택 페이지일 수 있습니다."
+                )
+                # デバッグ用にスクリーンショットとHTMLソースを保存
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                debug_file_base = (
+                    DATA_DIR
+                    / f"debug_{site_name}_{re.sub(r'[^a-zA-Z0-9]+', '_', keyword_to_search)}_{timestamp}"
+                )
+                source_path = debug_file_base.with_suffix(".html")
+                screenshot_path = debug_file_base.with_suffix(".png")
+                try:
+                    with open(source_path, "w", encoding="utf-8") as f:
+                        f.write(driver.page_source)
+                    driver.save_screenshot(str(screenshot_path))
+                    print(
+                        f"INFO [{site_name}] デバッグ情報保存: {source_path}, {screenshot_path}"
+                    )
+                except Exception as e_debug:
+                    print(f"ERROR [{site_name}] デバッグ情報保存失敗: {e_debug}")
 
-        time.sleep(random.uniform(*config.get("wait_time_after_load", (2, 4))))
+        except Exception as e_title:
+            print(f"WARN [{site_name}] ページタイトル取得失敗: {e_title}")
+
+        time.sleep(random.uniform(*config.get("wait_time_after_load", (2, 3))))
 
         items_collected_count = 0
         scroll_count_done = 0
-        max_scrolls = config.get("scroll_count", (1, 1))[1]
+        # scroll_countタプルから最大スクロール回数を取得 (例: (2,3)なら3回)
+        min_scrolls, max_scrolls = config.get("scroll_count", (1, 1))
 
+        # スクロールとアイテム取得のループ
         while (
             items_collected_count < max_items_to_collect
-            and scroll_count_done <= max_scrolls
+            and scroll_count_done < max_scrolls
         ):
-            if scroll_count_done > 0:
-                scroll_h = random.randint(*config.get("scroll_height", (500, 900)))
+            scroll_count_done += 1  # スクロール試行回数を先にインクリメント
+            if scroll_count_done > 1:  # 最初の表示以降はスクロール
+                scroll_h = random.randint(*config.get("scroll_height", (600, 1000)))
                 print(
-                    f"{datetime.datetime.now()} [{site_name}] スクロール ({scroll_count_done}/{max_scrolls}), 高さ: {scroll_h}px..."
+                    f"{datetime.datetime.now()} [{site_name}] スクロール ({scroll_count_done-1}/{max_scrolls-1}), 高さ: {scroll_h}px..."
                 )
                 driver.execute_script(f"window.scrollBy(0, {scroll_h});")
                 time.sleep(random.uniform(*config.get("scroll_wait_time", (1.5, 2.5))))
 
-            scroll_count_done += 1
-            new_items_found_this_scroll = False
-
+            new_items_found_this_pass = False
             for container_selector in config["item_container_selectors"]:
                 print(
                     f"{datetime.datetime.now()} [{site_name}] アイテムコンテナ探索: '{container_selector}'"
@@ -283,7 +293,7 @@ def scrape_prices_for_keyword_and_site(
                         and container_selector == config["item_container_selectors"][0]
                     ):
                         print(
-                            f"WARN [{site_name}] メインセレクタ '{container_selector}' でアイテムが見つかりません。ページ構造確認要。"
+                            f"WARN [{site_name}] メインのアイテムセレクタ '{container_selector}' でアイテムが見つかりません。"
                         )
 
                     for item_el_idx, item_el in enumerate(item_elements):
@@ -294,68 +304,62 @@ def scrape_prices_for_keyword_and_site(
                             item_text_content = item_el.text
                             price = None
                             price_selector_used = "N/A"
-                            price_text_found_detail = "N/A"
+                            price_text_found_in_el = "N/A"
 
-                            for p_selector_idx, p_selector in enumerate(
-                                config["price_inner_selectors"]
-                            ):
+                            for p_selector in config["price_inner_selectors"]:
                                 try:
-                                    price_el = item_el.find_element(
+                                    price_elements_in_item = item_el.find_elements(
                                         By.CSS_SELECTOR, p_selector
                                     )
-                                    price_text_found = price_el.text.strip()
-                                    price_html_for_debug = price_el.get_attribute(
-                                        "outerHTML"
-                                    )  # デバッグ用にHTML取得
+                                    if price_elements_in_item:
+                                        price_el = price_elements_in_item[
+                                            0
+                                        ]  # 最初に見つかったものを使用
+                                        price_text_found = price_el.text.strip()
+                                        # price_html_for_debug = price_el.get_attribute('outerHTML')
+                                        # print(f"DEBUG [{site_name}] Item {item_el_idx}, Price Selector '{p_selector}' found. Text: '{price_text_found}', HTML: '{price_html_for_debug[:100].replace('\n',' ')}'")
 
-                                    if price_text_found:
-                                        print(
-                                            f"DEBUG [{site_name}] Item {item_el_idx}, Price Selector '{p_selector}' found. Text: '{price_text_found}', HTML: '{price_html_for_debug[:100].replace('\n',' ')}'"
-                                        )
-                                        extracted_p = extract_price_from_text(
-                                            price_text_found, site_name
-                                        )
-                                        if extracted_p is not None:
-                                            price = extracted_p
-                                            price_selector_used = p_selector
-                                            price_text_found_detail = price_text_found
-                                            break
-                                # except NoSuchElementException: # このセレクタでは見つからなかった (よくあること)
-                                #     # print(f"DEBUG [{site_name}] Price selector '{p_selector}' not found in item {item_el_idx}")
-                                #     continue
-                                except (
-                                    Exception
-                                ) as e_price_find:  # StaleElementやその他のエラー
+                                        if price_text_found:
+                                            extracted_p = extract_price_from_text(
+                                                price_text_found, site_name
+                                            )
+                                            if extracted_p is not None:
+                                                price = extracted_p
+                                                price_selector_used = p_selector
+                                                price_text_found_in_el = (
+                                                    price_text_found
+                                                )
+                                                break
+                                except NoSuchElementException:  # これは想定内
+                                    continue
+                                except Exception as e_price_sel:
                                     print(
-                                        f"WARN [{site_name}] Price selector '{p_selector}' でエラー: {type(e_price_find).__name__}"
+                                        f"WARN [{site_name}] 価格セレクタ '{p_selector}' 処理中にエラー: {type(e_price_sel).__name__}"
                                     )
-                                    break  # このアイテムの価格セレクタ探索は中断
+                                    break
 
-                            if price is None and item_text_content:
-                                # print(f"DEBUG [{site_name}] Item {item_el_idx} - フォールバックで item_el.text から価格抽出試行: '{item_text_content[:100]}'")
+                            if price is None and item_text_content:  # フォールバック
                                 extracted_p_fallback = extract_price_from_text(
                                     item_text_content, site_name
                                 )
                                 if extracted_p_fallback is not None:
                                     price = extracted_p_fallback
                                     price_selector_used = "item_el.text (fallback)"
-                                    price_text_found_detail = item_text_content[
-                                        :30
-                                    ]  # 最初の30文字
+                                    price_text_found_in_el = item_text_content[:30]
 
                             if price is not None:
                                 prices.append(price)
                                 items_collected_count += 1
-                                new_items_found_this_scroll = True
+                                new_items_found_this_pass = True
                                 print(
-                                    f"INFO [{site_name}] 価格取得成功: {price} (from '{price_selector_used}', text: '{price_text_found_detail}')"
+                                    f"INFO [{site_name}] 価格取得成功 ({items_collected_count}/{max_items_to_collect}): {price} (from '{price_selector_used}', text: '{price_text_found_in_el.strip().replace('\n',' ')}')"
                                 )
                             # else:
-                            # print(f"DEBUG [{site_name}] 価格抽出失敗。Item text: '{item_text_content[:100].replace('\n', ' ')}...'")
+                            # print(f"DEBUG [{site_name}] 価格抽出失敗 (Item {item_el_idx}). Text: '{item_text_content[:100].replace('\n', ' ')}...'")
 
                         except StaleElementReferenceException:
                             print(
-                                f"{datetime.datetime.now()} WARN [{site_name}] アイテム処理中にStaleElement。スキップ。"
+                                f"{datetime.datetime.now()} WARN [{site_name}] アイテム処理中にStaleElement。このアイテムをスキップ。"
                             )
                             continue
                         except Exception as e_item_proc:
@@ -363,19 +367,21 @@ def scrape_prices_for_keyword_and_site(
                                 f"{datetime.datetime.now()} ERROR [{site_name}] アイテム個別処理中: {type(e_item_proc).__name__} - {e_item_proc}"
                             )
 
-                        time.sleep(random.uniform(0.01, 0.05))
+                        if items_collected_count >= max_items_to_collect:
+                            break
+                        time.sleep(random.uniform(0.02, 0.08))
 
                     if items_collected_count >= max_items_to_collect:
                         break
 
                 except TimeoutException:
                     print(
-                        f"{datetime.datetime.now()} INFO [{site_name}] セレクタ '{container_selector}' で要素待機タイムアウト。"
+                        f"{datetime.datetime.now()} INFO [{site_name}] コンテナセレクタ '{container_selector}' で要素待機タイムアウト。"
                     )
-                    continue
+                    continue  # 次のコンテナセレクタへ
                 except Exception as e_container_loop:
                     print(
-                        f"{datetime.datetime.now()} ERROR [{site_name}] アイテムコンテナ探索/処理中: {e_container_loop}"
+                        f"{datetime.datetime.now()} ERROR [{site_name}] アイテムコンテナ処理中: {e_container_loop}"
                     )
 
             if items_collected_count >= max_items_to_collect:
@@ -383,14 +389,14 @@ def scrape_prices_for_keyword_and_site(
                     f"{datetime.datetime.now()} [{site_name}] 目標取得数 {max_items_to_collect} 件に到達。"
                 )
                 break
-            if not new_items_found_this_scroll and scroll_count_done >= max_scrolls:
+            if not new_items_found_this_pass and scroll_count_done >= max_scrolls:
                 print(
-                    f"{datetime.datetime.now()} [{site_name}] 今回のスクロールで新アイテムなし、かつ最大スクロール回数到達。"
+                    f"{datetime.datetime.now()} [{site_name}] 今回のスクロールで新アイテム見つからず、かつ最大スクロール回数 ({max_scrolls}) 到達。"
                 )
                 break
-            elif not new_items_found_this_scroll:
+            elif not new_items_found_this_pass:
                 print(
-                    f"{datetime.datetime.now()} [{site_name}] 今回のスクロールで新アイテムなし。次のスクロールへ。"
+                    f"{datetime.datetime.now()} [{site_name}] 今回のスクロールで新アイテム見つからず。次のスクロール試行 ({scroll_count_done}/{max_scrolls})。"
                 )
 
         if not prices:
@@ -400,11 +406,11 @@ def scrape_prices_for_keyword_and_site(
 
     except TimeoutException as e_page_load:
         print(
-            f"{datetime.datetime.now()} ERROR [{site_name}] ページ読込タイムアウト({current_page_load_timeout}秒): {keyword_to_search} - {e_page_load.msg if hasattr(e_page_load, 'msg') else e_page_load}"
+            f"{datetime.datetime.now()} ERROR [{site_name}] ページ読込タイムアウト({current_page_load_timeout}秒): {keyword_to_search} - {getattr(e_page_load, 'msg', str(e_page_load))}"
         )
     except WebDriverException as e_wd_main:
         print(
-            f"{datetime.datetime.now()} ERROR [{site_name}] WebDriver操作中: {keyword_to_search} - {type(e_wd_main).__name__}: {e_wd_main.msg if hasattr(e_wd_main, 'msg') else e_wd_main}"
+            f"{datetime.datetime.now()} ERROR [{site_name}] WebDriver操作中: {keyword_to_search} - {type(e_wd_main).__name__}: {getattr(e_wd_main, 'msg', str(e_wd_main))}"
         )
     except Exception as e_main:
         print(
@@ -426,6 +432,10 @@ def scrape_prices_for_keyword_and_site(
         f"{datetime.datetime.now()} [{site_name}] キーワード '{keyword_to_search}' で {len(prices)} 件の価格を取得完了。"
     )
     return prices
+
+
+# (save_daily_stats_for_site, load_brands_from_json, main_scrape_all は変更なしのため省略)
+# ... (前のCanvasのコードの残りの部分をここにコピーしてください) ...
 
 
 def save_daily_stats_for_site(site_name, brand_keyword, prices):
@@ -456,31 +466,39 @@ def save_daily_stats_for_site(site_name, brand_keyword, prices):
         "max_price": max_price,
     }
 
+    df_existing = pd.DataFrame(columns=list(new_data_row.keys()))
     try:
-        df_existing = pd.DataFrame(columns=list(new_data_row.keys()))
         if file_path.exists() and os.path.getsize(file_path) > 0:
             try:
                 df_existing = pd.read_csv(file_path, dtype={"date": str})
+                # Ensure 'date' column exists and is not all NaT before formatting
+                if (
+                    "date" in df_existing.columns
+                    and not df_existing["date"].isnull().all()
+                ):
+                    df_existing["date"] = pd.to_datetime(
+                        df_existing["date"], errors="coerce"
+                    ).dt.strftime("%Y-%m-%d")
+                    df_existing = df_existing.dropna(
+                        subset=["date"]
+                    )  # Drop rows where date conversion failed
+                else:  # date列がない、または全てNaTの場合は、新しいデータで上書きするための準備
+                    df_existing = pd.DataFrame(columns=list(new_data_row.keys()))
+
             except Exception as e_read:
                 print(
-                    f"{datetime.datetime.now()} WARN: {file_path} 読込失敗: {e_read}。新規作成。"
+                    f"{datetime.datetime.now()} WARN: {file_path} 読込失敗: {e_read}。新規作成扱い。"
                 )
+                df_existing = pd.DataFrame(
+                    columns=list(new_data_row.keys())
+                )  # エラー時も空のDFで初期化
 
-        if "date" in df_existing.columns and not df_existing["date"].empty:
-            try:
-                df_existing["date"] = pd.to_datetime(
-                    df_existing["date"], errors="coerce"
-                ).dt.strftime("%Y-%m-%d")
-                df_existing = df_existing.dropna(subset=["date"])
-            except Exception as e_date_conv:
-                print(
-                    f"{datetime.datetime.now()} WARN: {file_path} date列変換で問題: {e_date_conv}"
-                )
-
-        mask = pd.Series(False, index=df_existing.index)  # 初期化
+        mask = pd.Series(False, index=df_existing.index)
         if (
-            not df_existing.empty and "date" in df_existing.columns
-        ):  # date列がない場合はマスクできない
+            not df_existing.empty
+            and "date" in df_existing.columns
+            and not df_existing["date"].isnull().all()
+        ):
             mask = (
                 (df_existing["date"] == today_str)
                 & (df_existing["site"] == site_name)
@@ -489,9 +507,8 @@ def save_daily_stats_for_site(site_name, brand_keyword, prices):
         existing_today_data_indices = df_existing[mask].index
 
         if not existing_today_data_indices.empty:
-            # 更新する列のみ指定
             update_cols = ["count", "average_price", "min_price", "max_price"]
-            for col_idx, col_name in enumerate(update_cols):
+            for col_name in update_cols:  # Iterate directly
                 df_existing.loc[existing_today_data_indices, col_name] = new_data_row[
                     col_name
                 ]
@@ -500,8 +517,9 @@ def save_daily_stats_for_site(site_name, brand_keyword, prices):
             )
         else:
             new_df_row_df = pd.DataFrame([new_data_row])
-            # df_existingが完全に空(列もない)場合を考慮
-            if df_existing.empty:
+            if (
+                df_existing.empty
+            ):  # Handle case where df_existing might only have columns but no rows
                 df_existing = new_df_row_df
             else:
                 df_existing = pd.concat([df_existing, new_df_row_df], ignore_index=True)
@@ -538,8 +556,8 @@ def load_brands_from_json():
 
 
 def main_scrape_all():
-    start_time = datetime.datetime.now()
-    print(f"{start_time} 一括スクレイピング処理を開始します...")
+    overall_start_time = datetime.datetime.now()
+    print(f"{overall_start_time} 一括スクレイピング処理を開始します...")
     brands_data_all_sites = load_brands_from_json()
 
     if not brands_data_all_sites:
@@ -548,9 +566,14 @@ def main_scrape_all():
         )
         return
 
-    for site_name, site_brands_data in brands_data_all_sites.items():
-        site_start_time = datetime.datetime.now()
-        print(f"\n{site_start_time} --- サイト処理開始: {site_name} ---")
+    total_sites_count = len(brands_data_all_sites)
+    for site_idx, (site_name, site_brands_data) in enumerate(
+        brands_data_all_sites.items()
+    ):
+        site_process_start_time = datetime.datetime.now()
+        print(
+            f"\n{site_process_start_time} --- サイト処理開始 ({site_idx+1}/{total_sites_count}): {site_name} ---"
+        )
 
         if site_name not in SITE_CONFIGS:
             print(
@@ -562,35 +585,27 @@ def main_scrape_all():
             print(
                 f"{datetime.datetime.now()}   -- カテゴリ処理中: {category_name} ({len(brands_in_category)}ブランド) --"
             )
-            for brand_idx, brand_keyword in enumerate(brands_in_category):
-                brand_process_start_time = datetime.datetime.now()
+            for brand_idx_in_cat, brand_keyword in enumerate(brands_in_category):
+                brand_loop_start_time = datetime.datetime.now()
                 print(
-                    f"{brand_process_start_time}     - ブランド ({brand_idx+1}/{len(brands_in_category)}): {brand_keyword} ({site_name})"
+                    f"{brand_loop_start_time}     - ブランド ({brand_idx_in_cat+1}/{len(brands_in_category)}): {brand_keyword} ({site_name})"
                 )
-
-                # 特定ブランドのみテストする場合の例
-                # if site_name == "mercari" and brand_keyword != "Supreme":
-                #     print(f"INFO: Skipping {brand_keyword} for mercari test.")
-                #     continue
-                # if site_name == "rakuma" and brand_keyword != "BEAMS":
-                #     print(f"INFO: Skipping {brand_keyword} for rakuma test.")
-                #     continue
 
                 prices = scrape_prices_for_keyword_and_site(site_name, brand_keyword)
 
-                if prices:  # pricesがNoneでなく、かつ空でないリストの場合
+                if prices:
                     save_daily_stats_for_site(site_name, brand_keyword, prices)
-                else:  # pricesがNoneまたは空リストの場合
+                else:
                     print(
                         f"{datetime.datetime.now()} INFO [{site_name}] ブランド '{brand_keyword}' の有効な価格情報が見つからなかったため、CSVファイルは更新/作成されません。"
                     )
 
-                brand_process_end_time = datetime.datetime.now()
+                brand_loop_end_time = datetime.datetime.now()
                 print(
-                    f"{brand_process_end_time}     - ブランド '{brand_keyword}' 処理完了。所要時間: {brand_process_end_time - brand_process_start_time}"
+                    f"{brand_loop_end_time}     - ブランド '{brand_keyword}' 処理完了。所要時間: {brand_loop_end_time - brand_loop_start_time}"
                 )
 
-                if brand_idx < len(brands_in_category) - 1:
+                if brand_idx_in_cat < len(brands_in_category) - 1:
                     sleep_duration = random.uniform(*INTER_BRAND_SLEEP_TIME)
                     print(
                         f"{datetime.datetime.now()}     - 次のブランドまで {sleep_duration:.1f} 秒待機..."
@@ -600,23 +615,21 @@ def main_scrape_all():
                 f"{datetime.datetime.now()}   -- カテゴリ '{category_name}' 処理完了 --"
             )
 
-        site_end_time = datetime.datetime.now()
+        site_process_end_time = datetime.datetime.now()
         print(
-            f"{site_end_time} --- サイト '{site_name}' 処理完了。所要時間: {site_end_time - site_start_time} ---"
+            f"{site_process_end_time} --- サイト '{site_name}' 処理完了。所要時間: {site_process_end_time - site_process_start_time} ---"
         )
-        if processed_site_count < len(
-            brands_data_all_sites
-        ):  # 最後のサイトでなければスリープ (processed_site_countは1から始まるため)
+
+        if site_idx < total_sites_count - 1:  # 最後のサイト処理後でなければスリープ
             site_sleep_duration = random.uniform(*INTER_SITE_SLEEP_TIME)
             print(
                 f"{datetime.datetime.now()} 次のサイト処理まで {site_sleep_duration:.1f} 秒待機..."
             )
             time.sleep(site_sleep_duration)
-            processed_site_count += 1  # カウンタをここでインクリメント
 
     overall_end_time = datetime.datetime.now()
     print(
-        f"\n{overall_end_time} 全ての一括スクレイピング処理が完了しました。総所要時間: {overall_end_time - start_time}"
+        f"\n{overall_end_time} 全ての一括スクレイピング処理が完了しました。総所要時間: {overall_end_time - overall_start_time}"
     )
 
 
