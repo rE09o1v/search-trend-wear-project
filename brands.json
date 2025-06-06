@@ -1,6 +1,8 @@
 {
   "mercari": {
     "ストリート": [
+      "A BATHING APE",
+      "Stussy",
       "Supreme"
     ],
     "モード系": [
@@ -14,13 +16,16 @@
       "Arc'teryx"
     ],
     "スニーカー": [
-      "NIKE Air Jordan"
+      "NIKE Air Jordan",
+      "NIKE Dunk",
+      "adidas Yeezy Boost"
     ],
     "未分類": []
   },
   "rakuma": {
     "レディース": [
-      "SNIDEL"
+      "SNIDEL",
+      "FRAY I.D"
     ],
     "メンズカジュアル": [
       "BEAMS",
